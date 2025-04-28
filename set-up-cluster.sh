@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euxo pipefail
+
 # Starting minikube cluster
 minikube start --disk-size=40g --extra-disks=1 --driver kvm2
 
@@ -22,3 +24,5 @@ make build
 # tagging container image
 docker tag $(docker images|awk '/build-/ {print $1}') rook/ceph:local-build
 docker tag rook/ceph:local-build rook/ceph:master
+
+exit 0

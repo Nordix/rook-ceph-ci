@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -euo pipefail
+set -euox pipefail
 
 # Install required base packages
 echo "[INFO] Installing base packages..."
@@ -22,8 +22,8 @@ echo \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt-get update -y
 sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-sudo groupadd docker
-sudo usermod -aG docker $USER
+sudo groupadd docker || true
+sudo usermod -aG docker $USER || true
 sudo systemctl enable docker
 sudo systemctl start docker
 
@@ -32,7 +32,8 @@ echo "[INFO] Installing libvirt and related packages..."
 sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
 
 # Add current user to libvirt groups
-sudo usermod -aG libvirt $USER
+sudo usermod -aG libvirt $USER || true
+sudo systemctl enable docker || true
 
 # Install kubectl
 echo "[INFO] Installing kubectl..."
@@ -64,3 +65,5 @@ newgrp libvirt
 
 # Final message
 echo "[INFO] Installation completed successfully!"
+
+exit 0
