@@ -2,11 +2,6 @@
 
 set -euo pipefail
 
-# Update system
-echo "[INFO] Updating system packages..."
-sudo apt-get update -y
-sudo apt-get upgrade -y
-
 # Install required base packages
 echo "[INFO] Installing base packages..."
 sudo apt-get install -y curl apt-transport-https ca-certificates gnupg lsb-release software-properties-common
@@ -17,11 +12,15 @@ sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
+# Install make
+sudo apt install make
+
 # Add the repository to Apt sources:
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
   $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update -y
 sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
 sudo groupadd docker
 sudo usermod -aG docker $USER
@@ -32,9 +31,8 @@ sudo systemctl start docker
 echo "[INFO] Installing libvirt and related packages..."
 sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
 
-# Add current user to libvirt and docker groups
-sudo usermod -aG libvirt $(USER)
-sudo usermod -aG docker $(USER)
+# Add current user to libvirt groups
+sudo usermod -aG libvirt $USER
 
 # Install kubectl
 echo "[INFO] Installing kubectl..."
@@ -61,6 +59,8 @@ echo "# Go environment" >> ~/.profile
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~/.profile
 echo "export GOPATH=\$HOME/go" >> ~/.profile
 source ~/.profile
+
+newgrp libvirt
 
 # Final message
 echo "[INFO] Installation completed successfully!"
