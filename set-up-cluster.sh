@@ -18,6 +18,8 @@ cd rook
 # build image inside minikube
 eval $(minikube docker-env -p minikube)
 
+# temporary fix
+export PATH=$PATH:/usr/local/go/bin
 # building  rook container image
 make build
 
