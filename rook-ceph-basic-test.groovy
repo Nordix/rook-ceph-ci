@@ -29,6 +29,67 @@ pipeline {
         }
       }
     }
+    stage('Cleanup partitions') {
+      steps {
+        script {
+          sh '''
+#!/bin/bash
+
+# Define the disk to be cleaned
+DISK_TO_CLEAN="/dev/vdb"
+
+# Check if the disk exists
+if [ ! -b "$DISK_TO_CLEAN" ]; then
+    echo "Error: Disk $DISK_TO_CLEAN not found."
+    exit 1
+fi
+
+echo "Attempting to unmount any existing partitions on $DISK_TO_CLEAN..."
+# Get a list of partitions on the disk
+# lsblk will usually not require sudo to list, but unmount definitely does.
+PARTITIONS=$(lsblk -n -o NAME,MOUNTPOINT "$DISK_TO_CLEAN" | awk '$2 != "" {print "/dev/"$1}')
+
+if [ -z "$PARTITIONS" ]; then
+    echo "No mounted partitions found on $DISK_TO_CLEAN. Proceeding."
+else
+    for p in $PARTITIONS; do
+        echo "  Unmounting $p..."
+        if ! sudo umount "$p"; then # Explicit sudo for umount
+            echo "  Warning: Could not unmount $p. It might be in use or not mounted."
+            echo "           Please manually check and unmount if necessary."
+            # Optionally, you can add a retry or exit here if unmounting is critical
+        else
+            echo "  $p unmounted successfully."
+        fi
+    done
+fi
+
+# --- WIPE DISK WITH SGDISK ---
+echo "Wiping partition table and data signatures from $DISK_TO_CLEAN with sgdisk..."
+if ! sudo sgdisk --zap-all "$DISK_TO_CLEAN"; then # Explicit sudo for sgdisk
+    echo "Error: Failed to wipe disk $DISK_TO_CLEAN with sgdisk."
+    echo "Please check if sgdisk is installed and if there are any errors."
+    exit 1
+fi
+echo "Disk $DISK_TO_CLEAN wiped successfully."
+
+# --- VERIFICATION ---
+echo "Verifying disk state..."
+echo "Running lsblk $DISK_TO_CLEAN:"
+lsblk "$DISK_TO_CLEAN" # lsblk usually doesn't need sudo for basic info
+
+echo "Running wipefs -n $DISK_TO_CLEAN (should show no signatures):"
+sudo wipefs -n "$DISK_TO_CLEAN" # Explicit sudo for wipefs, as it inspects raw device
+
+echo "--------------------------------------------------------"
+echo "Disk cleanup complete for $DISK_TO_CLEAN."
+echo "You should now see no partitions listed under $DISK_TO_CLEAN in lsblk."
+echo "It is now ready for Rook Ceph OSD provisioning."
+echo "--------------------------------------------------------"
+            '''
+        }
+      }
+    }
 
     stage('Cleanup Disk') {
       steps {
@@ -54,19 +115,29 @@ pipeline {
             echo "[cleanup] Reloading NBD module..."
             sudo modprobe -r nbd || true
             sudo modprobe nbd || true
+
+            # removing metadata
+            sudo rm -rf /var/lib/rook || true
             '''
         }
       }
     }
-    stage('Install kubectl') {
+    stage('Install kubectl and yq') {
       steps {
         script {
           sh '''
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
-            echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
-            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-            rm -rf kubectl
+if ! command -v kubectl; then
+  curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+  echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+  sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+  rm -rf kubectl
+fi
+if ! command -v kubectl; then
+  curl -L https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -o yq
+  chmod +x yq
+  sudo mv yq /usr/local/bin/yq
+fi
           '''
         }
       }
@@ -209,6 +280,15 @@ pipeline {
           LOGS_TARBALL="logs-${BUILD_TAG}.tgz"
           rook/tests/scripts/collect-logs.sh
           tar -cvzf "${LOGS_TARBALL}" test/*
+      '''
+      archiveArtifacts "logs-${env.BUILD_TAG}.tgz"
+    }
+    success {
+      echo 'removing cluster'
+      sh '''
+      kubectl -n rook-ceph patch cephcluster rook-ceph --type merge -p '{"spec":{"cleanupPolicy":{"confirmation":"yes-really-destroy-data"}}}'
+      kubectl -n rook-ceph delete cephcluster rook-ceph
+
       '''
       archiveArtifacts "logs-${env.BUILD_TAG}.tgz"
     }
