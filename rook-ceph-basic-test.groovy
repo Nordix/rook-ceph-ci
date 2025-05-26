@@ -29,99 +29,85 @@ pipeline {
         }
       }
     }
-    stage('Cleanup partitions') {
+    stage('CleanUp disks') {
       steps {
         script {
           sh '''
 #!/bin/bash
 
-# Define the disk to be cleaned
 DISK_TO_CLEAN="/dev/vdb"
 
-# Check if the disk exists
-if [ ! -b "$DISK_TO_CLEAN" ]; then
-    echo "Error: Disk $DISK_TO_CLEAN not found."
-    exit 1
-fi
+MOUNTED_PARTITIONS=$(lsblk -n -o NAME,MOUNTPOINT "$DISK_TO_CLEAN" | awk '$2 != "" {print "/dev/"$1}')
 
-echo "Attempting to unmount any existing partitions on $DISK_TO_CLEAN..."
-# Get a list of partitions on the disk
-# lsblk will usually not require sudo to list, but unmount definitely does.
-PARTITIONS=$(lsblk -n -o NAME,MOUNTPOINT "$DISK_TO_CLEAN" | awk '$2 != "" {print "/dev/"$1}')
-
-if [ -z "$PARTITIONS" ]; then
-    echo "No mounted partitions found on $DISK_TO_CLEAN. Proceeding."
+if [ -z "$MOUNTED_PARTITIONS" ]; then
+    echo "[cleanup] No mounted partitions found on $DISK_TO_CLEAN. Proceeding."
 else
-    for p in $PARTITIONS; do
-        echo "  Unmounting $p..."
-        if ! sudo umount "$p"; then # Explicit sudo for umount
-            echo "  Warning: Could not unmount $p. It might be in use or not mounted."
-            echo "           Please manually check and unmount if necessary."
-            # Optionally, you can add a retry or exit here if unmounting is critical
+    for p in $MOUNTED_PARTITIONS; do
+        echo "[cleanup]   Unmounting $p..."
+        # Try a graceful unmount, then force unmount if busy
+        if ! sudo umount "$p"; then
+            echo "[cleanup]   Warning: Failed graceful unmount for $p. Attempting force unmount."
+            if ! sudo umount -lf "$p"; then # -l: lazy unmount, -f: force unmount
+                echo "ERROR: Failed to force unmount $p. It might be heavily in use. Manual intervention required."
+                echo "Please ensure $p is not mounted or in use before re-running this script."
+                exit 1 # Exit if unmount fails to prevent wiping an active disk
+            else
+                echo "[cleanup]   $p force unmounted successfully."
+            fi
         else
-            echo "  $p unmounted successfully."
+            echo "[cleanup]   $p unmounted successfully."
         fi
     done
 fi
 
-# --- WIPE DISK WITH SGDISK ---
-echo "Wiping partition table and data signatures from $DISK_TO_CLEAN with sgdisk..."
-if ! sudo sgdisk --zap-all "$DISK_TO_CLEAN"; then # Explicit sudo for sgdisk
-    echo "Error: Failed to wipe disk $DISK_TO_CLEAN with sgdisk."
-    echo "Please check if sgdisk is installed and if there are any errors."
+echo "[cleanup] Zeroing critical sectors of $DISK_TO_CLEAN to remove all lingering metadata..."
+echo "[cleanup]   Zeroing first 100MB of $DISK_TO_CLEAN..."
+sudo dd if=/dev/zero of="$DISK_TO_CLEAN" bs=1M count=100 oflag=direct,dsync || true
+
+DISK_MIDDLE_SEEK_MB=$((50 * 1024)) # 50 GiB converted to MB
+DISK_SIZE_BYTES=$(sudo blockdev --getsize64 "$DISK_TO_CLEAN")
+DISK_SIZE_MB=$((DISK_SIZE_BYTES / (1024 * 1024)))
+
+if [ "$DISK_SIZE_MB" -gt "$((DISK_MIDDLE_SEEK_MB + 100))" ]; then # Ensure there's space for 100MB at mid-point
+    echo "[cleanup]   Zeroing 100MB around the middle of $DISK_TO_CLEAN (at ~${DISK_MIDDLE_SEEK_MB}MB)..."
+    sudo dd if=/dev/zero of="$DISK_TO_CLEAN" bs=1M count=100 oflag=direct,dsync seek="$DISK_MIDDLE_SEEK_MB" || true
+else
+    echo "[cleanup]   Disk $DISK_TO_CLEAN too small for a mid-disk wipe (size: ${DISK_SIZE_MB}MB). Skipping."
+fi
+
+SEEK_END_MB=$((DISK_SIZE_MB - 100))
+if [ "$SEEK_END_MB" -lt 0 ]; then SEEK_END_MB=0; fi # Ensure seek is not negative (if disk is < 100MB)
+echo "[cleanup]   Zeroing last 100MB of $DISK_TO_CLEAN (starting at ~${SEEK_END_MB}MB)..."
+sudo dd if=/dev/zero of="$DISK_TO_CLEAN" bs=1M count=100 oflag=direct,dsync seek="$SEEK_END_MB" || true
+
+echo "[cleanup] Zapping disk with sgdisk to ensure a clean GPT partition table..."
+if ! sudo sgdisk --zap-all "$DISK_TO_CLEAN"; then
+    echo "ERROR: Failed to wipe disk $DISK_TO_CLEAN with sgdisk. This is a critical failure. Exiting."
     exit 1
 fi
-echo "Disk $DISK_TO_CLEAN wiped successfully."
+echo "Disk $DISK_TO_CLEAN partition table zapped successfully."
 
-# --- VERIFICATION ---
-echo "Verifying disk state..."
-echo "Running lsblk $DISK_TO_CLEAN:"
-lsblk "$DISK_TO_CLEAN" # lsblk usually doesn't need sudo for basic info
+lsblk "$DISK_TO_CLEAN"
 
-echo "Running wipefs -n $DISK_TO_CLEAN (should show no signatures):"
-sudo wipefs -n "$DISK_TO_CLEAN" # Explicit sudo for wipefs, as it inspects raw device
+echo "Running: sudo wipefs -n $DISK_TO_CLEAN (should show no signatures)"
+sudo wipefs -n "$DISK_TO_CLEAN" # Use -n for dry-run, just to inspect for any lingering signatures
+
+sudo rm -rf /var/lib/rook || true  # Remove Rook's local state on the host
+sudo rm -rf /var/lib/ceph || true  # Remove Ceph's local state on the host
+
+# These commands are specific to NBD devices.
+echo "Reloading NBD module (if applicable)..."
+sudo modprobe -r nbd || true # Remove module if loaded, '|| true' prevents script from failing if not loaded
+sudo modprobe nbd || true    # Load module
 
 echo "--------------------------------------------------------"
-echo "Disk cleanup complete for $DISK_TO_CLEAN."
-echo "You should now see no partitions listed under $DISK_TO_CLEAN in lsblk."
-echo "It is now ready for Rook Ceph OSD provisioning."
+echo "Comprehensive disk cleanup for $DISK_TO_CLEAN completed successfully."
 echo "--------------------------------------------------------"
             '''
         }
       }
     }
 
-    stage('Cleanup Disk') {
-      steps {
-        script {
-          sh '''#!/bin/bash
-            set -euxo pipefail
-
-            disk="/dev/vdb"
-
-            echo "[cleanup] Zapping disk: $disk"
-            sudo sgdisk --zap-all "$disk"
-
-            echo "[cleanup] Zeroing key offsets to clear metadata..."
-            sudo dd if=/dev/zero of="$disk" bs=1K count=200 oflag=direct,dsync seek=0 || true
-            sudo dd if=/dev/zero of="$disk" bs=1K count=200 oflag=direct,dsync seek=$((1 * 1024 * 1024)) || true
-            sudo dd if=/dev/zero of="$disk" bs=1K count=200 oflag=direct,dsync seek=$((10 * 1024 * 1024)) || true
-            sudo dd if=/dev/zero of="$disk" bs=1K count=200 oflag=direct,dsync seek=$((100 * 1024 * 1024)) || true
-            sudo dd if=/dev/zero of="$disk" bs=1K count=200 oflag=direct,dsync seek=$((1000 * 1024 * 1024)) || true
-
-            echo "[cleanup] Refreshing partition table..."
-            sudo partprobe "$disk"
-
-            echo "[cleanup] Reloading NBD module..."
-            sudo modprobe -r nbd || true
-            sudo modprobe nbd || true
-
-            # removing metadata
-            sudo rm -rf /var/lib/rook || true
-            '''
-        }
-      }
-    }
     stage('Install kubectl and yq') {
       steps {
         script {
