@@ -3,7 +3,15 @@
 # Global defines for Airship CI infrastructure
 # ============================================
 
-
+export OS_AUTH_URL=https://xerces.ericsson.net:5000
+export OS_PROJECT_ID=b62dc8622f87407589de9f7dcec13d25
+export OS_PROJECT_NAME="EST_Metal3_CI"
+export OS_USER_DOMAIN_NAME="xerces"
+export OS_PROJECT_DOMAIN_ID="99882e968d0b44308e7ac01e78af2163"
+export OS_REGION_NAME="RegionOne"
+export OS_INTERFACE=public
+export OS_IDENTITY_API_VERSION=3
+export OS_REGION_NAME="RegionOne"
 # Description:
 
 get_subnet_name() {

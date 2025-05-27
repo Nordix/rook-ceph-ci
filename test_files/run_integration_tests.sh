@@ -83,8 +83,8 @@ echo "Ceph Mgr Ready Check"
 
 set -euxo pipefail
 
-mkdir tmp
-cd /tmp
+mkdir ../tmp
+cd ../tmp
 
 # Get and export the toolbox pod name
 toolbox=$(kubectl get pod -l app=rook-ceph-tools -n rook-ceph -o jsonpath='{.items[0].metadata.name}')
@@ -115,7 +115,7 @@ until kubectl -n rook-ceph exec \"$toolbox\" -- curl --silent --show-error \"$mg
 done
 "
 
-cd /tmp/../rook
+cd ../rook
 
 echo "Log collection"
 

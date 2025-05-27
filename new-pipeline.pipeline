@@ -13,58 +13,59 @@ script {
 }
 
 pipeline {
-    options {
-        disableConcurrentBuilds()
-    }
-    agent { label 'ceph-rook-static-vm' }
-
-    parameters {
-        string(name: 'CEPH_IMAGE', defaultValue: 'quay.io/ceph/ceph:v19', description: 'Ceph image to test with')
-    }
-    environment {
-    TEST_EXECUTER_VM_NAME="${TEST_EXECUTER_VM_NAME}"
+  options {
+      disableConcurrentBuilds()
   }
-    stages {
-      stage('SCM') {
-        options {
-          timeout(time: 5, unit: 'MINUTES')
-        }
-        steps {
-            script {
-              CURRENT_START_TIME = System.currentTimeMillis()
-            }
-            /* Checkout CI Repo */
-            checkout([$class: 'GitSCM',
-            branches: [
-              [name: ci_git_branch]
-            ],
-            doGenerateSubmoduleConfigurations: false,
-            extensions: [
-              [$class: 'RelativeTargetDirectory', relativeTargetDir: 'rook-ceph-ci'],
-              [$class: 'WipeWorkspace'],
-              [$class: 'CleanCheckout'],
-              [$class: 'CleanBeforeCheckout']
-            ],
-            submoduleCfg: [],
-            userRemoteConfigs: [[url: ci_git_url, refspec: refspec]]
-            ])
-        }
+  agent { label 'ceph-rook-static-vm' }
+
+  parameters {
+      string(name: 'CEPH_IMAGE', defaultValue: 'quay.io/ceph/ceph:v19', description: 'Ceph image to test with')
+  }
+  environment {
+  BUILD_TAG = "${env.BUILD_TAG}"
+  TEST_EXECUTER_VM_NAME="${TEST_EXECUTER_VM_NAME}"
+  }
+  stages {
+    stage('SCM') {
+      options {
+        timeout(time: 5, unit: 'MINUTES')
       }
-      stage('Run integration tests') {
-        steps {
-          withCredentials([sshUserPrivateKey(credentialsId: 'metal3ci_city_cloud_ssh_keypair', keyFileVariable: 'ROOK_CI_USER_KEY')]) {
-            withCredentials([ usernamePassword(credentialsId: 'xerces-est-metal3ci', usernameVariable: 'OS_USERNAME', passwordVariable: 'OS_PASSWORD')]) {
-                sh "./rook-ceph-ci/vm_create/vm_create.sh"
-            }
+      steps {
+          script {
+            CURRENT_START_TIME = System.currentTimeMillis()
           }
-        }
+          /* Checkout CI Repo */
+          checkout([$class: 'GitSCM',
+          branches: [
+            [name: ci_git_branch]
+          ],
+          doGenerateSubmoduleConfigurations: false,
+          extensions: [
+            [$class: 'RelativeTargetDirectory', relativeTargetDir: 'rook-ceph-ci'],
+            [$class: 'WipeWorkspace'],
+            [$class: 'CleanCheckout'],
+            [$class: 'CleanBeforeCheckout']
+          ],
+          submoduleCfg: [],
+          userRemoteConfigs: [[url: ci_git_url, refspec: refspec]]
+          ])
       }
-      stage('Clean test') {
-        steps {
-          withCredentials([sshUserPrivateKey(credentialsId: 'metal3ci_city_cloud_ssh_keypair', keyFileVariable: 'ROOK_CI_USER_KEY')]) {
-             sh "echo 'Cleaning VM'"
+    }
+    stage('Run integration tests') {
+      steps {
+        withCredentials([sshUserPrivateKey(credentialsId: 'metal3ci_city_cloud_ssh_keypair', keyFileVariable: 'ROOK_CI_USER_KEY')]) {
+          withCredentials([ usernamePassword(credentialsId: 'xerces-est-metal3ci', usernameVariable: 'OS_USERNAME', passwordVariable: 'OS_PASSWORD')]) {
+              sh "./rook-ceph-ci/vm_create/vm_create.sh"
           }
         }
       }
     }
+  }
+  post {
+    always {
+      echo 'Collecting logs'
+      echo "Removing VM"
+      sh "./rook-ceph-ci/vm_create/vm_delete.sh"
+    }
+  }
 }
