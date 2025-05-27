@@ -30,8 +30,8 @@ chmod +x yq
 sudo mv yq /usr/local/bin/yq
 
 echo "Fetching latest Go 1.24.x release..."
-GO_VERSION=$(curl -s https://go.dev/dl/?mode=json | jq -r '.[].version' | grep '^go1\\.24\\.' | sort -Vr | head -n1 | sed 's/go//')
-echo "Latest Go version: $GO_VERSION"
+GO_VERSION=1.24.3
+echo "Installing Go version: $GO_VERSION"
 
 CURRENT_GO_VERSION=$(go version 2>/dev/null | awk \'{print $3}\' | sed \'s/go//\')
 echo "Currently installed Go version: $CURRENT_GO_VERSION"

@@ -32,6 +32,8 @@ TEST_EXECUTER_PORT_NAME="${TEST_EXECUTER_PORT_NAME:-${TEST_EXECUTER_VM_NAME}-int
 VOLUME_NAME="${TEST_EXECUTER_VM_NAME}-int-port}"
 DATA_VOLUME_SIZE=20
 VOLUME_TYPE="default"
+TIMEOUT=300 # Timeout in seconds (e.g., 5 minutes)
+INTERVAL=10
 
 # Creating new port, needed to immediately get the ip
 EXT_PORT_ID="$(openstack port create -f json \
