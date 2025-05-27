@@ -9,9 +9,6 @@ source "${VARS_FILE}"
 export CEPH_IMAGE
 
 cd "/home/${USER}"
-git clone "https://github.com/rook/rook.git" rook
-
-cd rook
 
 echo "Installin minikube"
 curl -LO https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
@@ -33,10 +30,13 @@ echo "Fetching latest Go 1.24.x release..."
 GO_VERSION=1.24.3
 echo "Installing Go version: $GO_VERSION"
 
-CURRENT_GO_VERSION=$(go version 2>/dev/null | awk \'{print $3}\' | sed \'s/go//\')
-echo "Currently installed Go version: $CURRENT_GO_VERSION"
+CURRENT_GO_VERSION=$(go version 2>/dev/null | awk '{print $3}' | sed 's/go//')
 
-if [ "$CURRENT_GO_VERSION" = "$GO_VERSION" ]; then
+if [ -n "${CURRENT_GO_VERSION+x}" ]; then
+  echo "Currently installed Go version: $CURRENT_GO_VERSION"
+fi
+
+if [ "${CURRENT_GO_VERSION:-}" = "$GO_VERSION" ]; then
     echo "Go $GO_VERSION is already installed."
 else
     echo "Installing Go $GO_VERSION..."
@@ -48,6 +48,10 @@ else
 fi
 
 go version
+
+echo "Cloning Rook repo"
+git clone "https://github.com/rook/rook.git" rook
+cd rook
 
 echo "Setup minikube cluster"
 
@@ -69,7 +73,7 @@ tests/scripts/github-action-helper.sh deploy_cluster
 tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
 
 echo "Setup CSI Addons"
-tests/scripts/csiaddons.sh setup_csiaddon
+tests/scripts/csiaddons.sh setup_csiaddons
 
 echo "Wait for Ceph"
 tests/scripts/github-action-helper.sh wait_for_prepare_pod 2

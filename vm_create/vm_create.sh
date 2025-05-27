@@ -23,14 +23,14 @@ export OS_INTERFACE=public
 export OS_IDENTITY_API_VERSION=3
 export OS_REGION_NAME="RegionOne"
 
+DATA_VOLUME_SIZE=20
 SUBNET_NAME="metal3-ci-subnet"
 IMAGE_NAME="metal3-ci-ubuntu-latest"
 ROOK_CI_USER="metal3ci"
 TEST_EXECUTER_FLAVOR="c8m32-est"
 CI_EXT_NET="metal3-ci-net"
 TEST_EXECUTER_PORT_NAME="${TEST_EXECUTER_PORT_NAME:-${TEST_EXECUTER_VM_NAME}-int-port}"
-VOLUME_NAME="${TEST_EXECUTER_VM_NAME}-int-port}"
-DATA_VOLUME_SIZE=20
+VOLUME_NAME="${TEST_EXECUTER_VM_NAME}-volume"
 VOLUME_TYPE="default"
 TIMEOUT=300 # Timeout in seconds (e.g., 5 minutes)
 INTERVAL=10
