@@ -1,0 +1,55 @@
+import java.text.SimpleDateFormat
+
+script {
+  def date = new Date()
+  def dateFormat = new SimpleDateFormat("yyyyMMddHHmmss")
+  def rand = new Random()
+  VM_KEY = (1..4).collect { ('a'..'z').join("")[ rand.nextInt( 26 ) ] }.join("")
+  VM_NAME = "rook-ci-vm-" + dateFormat.format(date) + "-" + VM_KEY
+
+  ci_git_branch = "main"
+  ci_git_url = "https://github.com/Nordix/rook-ceph-ci.git"
+  refspec = '+refs/heads/*:refs/remotes/origin/*'
+}
+
+pipeline {
+    options {
+        disableConcurrentBuilds()
+    }
+    agent { label 'ceph-rook-static-vm' }
+
+    parameters {
+        string(name: 'CEPH_IMAGE', defaultValue: 'quay.io/ceph/ceph:v19', description: 'Ceph image to test with')
+    }
+    stages {
+      stage('SCM') {
+        options {
+          timeout(time: 5, unit: 'MINUTES')
+        }
+        steps {
+            script {
+              CURRENT_START_TIME = System.currentTimeMillis()
+            }
+            /* Checkout CI Repo */
+            checkout([$class: 'GitSCM',
+            branches: [
+              [name: ci_git_branch]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            extensions: [
+              [$class: 'WipeWorkspace'],
+              [$class: 'CleanCheckout'],
+              [$class: 'CleanBeforeCheckout']
+            ],
+            submoduleCfg: [],
+            userRemoteConfigs: [[url: ci_git_url, refspec: refspec]]
+            ])
+        }
+      }
+      stage('Prepare-vm') {
+        steps {
+          sh "echo Hello world"
+        }
+      }
+    }
+}

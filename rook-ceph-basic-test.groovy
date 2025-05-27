@@ -76,7 +76,7 @@ else
 fi
 
 SEEK_END_MB=$((DISK_SIZE_MB - 100))
-if [ "$SEEK_END_MB" -lt 0 ]; then SEEK_END_MB=0; fi # Ensure seek is not negative (if disk is < 100MB)
+if [ "$SEEK_END_MB" -lt 0 ]; then SEEK_END_MB=0; fi
 echo "[cleanup]   Zeroing last 100MB of $DISK_TO_CLEAN (starting at ~${SEEK_END_MB}MB)..."
 sudo dd if=/dev/zero of="$DISK_TO_CLEAN" bs=1M count=100 oflag=direct,dsync seek="$SEEK_END_MB" || true
 
