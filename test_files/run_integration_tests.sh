@@ -84,17 +84,25 @@ echo "Ceph Mgr Ready Check"
 set -euxo pipefail
 
 mkdir tmp
-cd tmp
+cd /tmp
 
 # Get and export the toolbox pod name
-export toolbox=$(kubectl get pod -l app=rook-ceph-tools -n rook-ceph -o jsonpath='{.items[0].metadata.name}')
+toolbox=$(kubectl get pod -l app=rook-ceph-tools -n rook-ceph -o jsonpath='{.items[0].metadata.name}')
 if [ -z "$toolbox" ]; then
 echo "ERROR: rook-ceph-tools pod not found."
 exit 1
 fi
+export toolbox
 
 # Wait for ceph mgr to expose its IP
-mgr_raw
+timeout 15 sh -c "
+until kubectl -n rook-ceph exec \"$toolbox\" -- ceph mgr dump -f json |
+    jq --raw-output .active_addr |
+    grep -Eqo '(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)'; do
+    echo 'Waiting for mgr IP...'
+    sleep 1
+done
+"
 
 # Get the IP and wait for Prometheus exporter
 export mgr_raw=$(kubectl -n rook-ceph exec "$toolbox" -- ceph mgr dump -f json | jq --raw-output .active_addr)
@@ -102,7 +110,7 @@ export mgr_ip=${mgr_raw%%:*}
 
 timeout 60 sh -c "
 until kubectl -n rook-ceph exec \"$toolbox\" -- curl --silent --show-error \"$mgr_ip:9283\"; do
-    echo \"Waiting for prometheus exporter...\"
+    echo 'Waiting for prometheus exporter...'
     sleep 1
 done
 "
