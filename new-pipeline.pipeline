@@ -46,9 +46,20 @@ pipeline {
             ])
         }
       }
-      stage('Prepare-vm') {
+      stage('Run integration tests') {
         steps {
-          sh "echo Hello world"
+          withCredentials([sshUserPrivateKey(credentialsId: 'metal3ci_city_cloud_ssh_keypair', keyFileVariable: 'ROOK_CI_USER_KEY')]) {
+            withCredentials([ usernamePassword(credentialsId: 'xerces-est-metal3ci', usernameVariable: 'OS_USERNAME', passwordVariable: 'OS_PASSWORD')]) {
+                sh "./rook-ceph-ci/vm_create/vm_create.sh"
+            }
+          }
+        }
+      }
+      stage('Clean test') {
+        steps {
+          withCredentials([sshUserPrivateKey(credentialsId: 'metal3ci_city_cloud_ssh_keypair', keyFileVariable: 'ROOK_CI_USER_KEY')]) {
+             sh "echo 'Cleaning VM'"
+          }
         }
       }
     }

@@ -3,20 +3,9 @@
 # Global defines for Airship CI infrastructure
 # ============================================
 
-CI_EXT_NET="metal3-ci-ext-net"
-CI_EXT_SUBNET_CIDR="10.100.10.0/24"
-CI_FLOATING_IP_NET="ext-net"
-CI_METAL3_IMAGE="metal3-ci-ubuntu-metal3-img"
-CI_METAL3_CENTOS_IMAGE="metal3-ci-centos-metal3-img"
-
 
 # Description:
-# Generates subnet name from Network name.
-#
-# Example:
-#   Input: "metal3-network"
-#   Output: "metal3-network-subnet"
-#
+
 get_subnet_name() {
   echo "${1:?}-subnet"
 }
