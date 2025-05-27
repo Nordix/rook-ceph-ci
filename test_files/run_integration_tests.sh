@@ -72,10 +72,7 @@ echo "Cluster Setup"
 tests/scripts/github-action-helper.sh use_local_disk
 tests/scripts/github-action-helper.sh create_partitions_for_osds
 tests/scripts/github-action-helper.sh deploy_cluster
-
-if [[ "${TEST_TYPE}" == "basic" ]]; then
-    tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
-fi
+tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
 
 echo "Setup CSI Addons"
 tests/scripts/csiaddons.sh setup_csiaddons
@@ -121,6 +118,12 @@ done
 "
 
 cd ../rook
+
+if [[ "${TEST_TYPE}" == "object-store" ]]; then
+    echo "Validating Object store"
+    tests/scripts/validate_cluster.sh rgw store-a
+    tests/scripts/validate_cluster.sh rgw store-b
+fi
 
 echo "Log collection"
 
