@@ -68,18 +68,28 @@ echo "Validate yaml"
 tests/scripts/github-action-helper.sh validate_yaml
 
 echo "Cluster Setup"
-
-tests/scripts/github-action-helper.sh use_local_disk
-tests/scripts/github-action-helper.sh create_partitions_for_osds
-tests/scripts/github-action-helper.sh deploy_cluster
-tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
+if [[ "${TEST_TYPE}" != "encryption" ]]; then
+    tests/scripts/github-action-helper.sh use_local_disk
+    tests/scripts/github-action-helper.sh create_partitions_for_osds
+    tests/scripts/github-action-helper.sh deploy_cluster
+    tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
+    osd_num=2
+else
+    BLOCK="/dev/$(tests/scripts/github-action-helper.sh find_extra_block_dev)"
+    export BLOCK
+    tests/scripts/github-action-helper.sh use_local_disk
+    tests/scripts/create-bluestore-partitions.sh --disk "$BLOCK" --wipe-only
+    tests/scripts/github-action-helper.sh deploy_cluster encryption
+    tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster encryption
+    osd_num=1
+fi
 
 echo "Setup CSI Addons"
 tests/scripts/csiaddons.sh setup_csiaddons
 
 echo "Wait for Ceph"
-tests/scripts/github-action-helper.sh wait_for_prepare_pod 2
-tests/scripts/github-action-helper.sh wait_for_ceph_to_be_ready all 2
+tests/scripts/github-action-helper.sh wait_for_prepare_pod $osd_num
+tests/scripts/github-action-helper.sh wait_for_ceph_to_be_ready all $osd_num
 
 echo "Ceph Mgr Ready Check"
 
