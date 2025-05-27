@@ -63,9 +63,11 @@ pipeline {
   }
   post {
     always {
-      echo 'Collecting logs'
-      echo "Removing VM"
-      sh "./rook-ceph-ci/vm_create/vm_delete.sh"
+      withCredentials([ usernamePassword(credentialsId: 'xerces-est-metal3ci', usernameVariable: 'OS_USERNAME', passwordVariable: 'OS_PASSWORD')]) {
+         echo 'Collecting logs'
+         echo "Removing VM"
+         sh "./rook-ceph-ci/vm_create/vm_delete.sh"
+      }
     }
   }
 }

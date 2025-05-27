@@ -6,6 +6,7 @@ VARS_FILE="${1}"
 # shellcheck disable=SC1090
 source "${VARS_FILE}"
 
+export BUILD_TAG
 export CEPH_IMAGE
 
 cd "/home/${USER}"
@@ -122,4 +123,4 @@ echo "Log collection"
 pwd
 LOGS_TARBALL="logs-${BUILD_TAG}.tgz"
 tests/scripts/collect-logs.sh
-tar -cvzf "${LOGS_TARBALL}" tmp/*
+tar -cvzf "${LOGS_TARBALL}" test/*

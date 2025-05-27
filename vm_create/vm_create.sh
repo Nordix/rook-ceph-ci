@@ -24,6 +24,7 @@ VOLUME_NAME="${TEST_EXECUTER_VM_NAME}-volume"
 VOLUME_TYPE="default"
 TIMEOUT=300 # Timeout in seconds (e.g., 5 minutes)
 INTERVAL=10
+BUILD_TAG="${BUILD_TAG:-logs_rook_tests}"
 
 # Creating new port, needed to immediately get the ip
 EXT_PORT_ID="$(openstack port create -f json \
@@ -103,6 +104,7 @@ echo "Volume attached successfully."
 TEMP_FILE_NAME="vars.sh"
 cat <<-EOF >> "${CI_DIR}/../test_files/${TEMP_FILE_NAME}"
 CEPH_IMAGE="${CEPH_IMAGE}"
+BUILD_TAG="${BUILD_TAG}"
 EOF
 
 scp \
