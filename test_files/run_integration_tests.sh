@@ -8,6 +8,7 @@ source "${VARS_FILE}"
 
 export BUILD_TAG
 export CEPH_IMAGE
+export TEST_TYPE
 
 cd "/home/${USER}"
 
@@ -71,7 +72,10 @@ echo "Cluster Setup"
 tests/scripts/github-action-helper.sh use_local_disk
 tests/scripts/github-action-helper.sh create_partitions_for_osds
 tests/scripts/github-action-helper.sh deploy_cluster
-tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
+
+if [[ "${TEST_TYPE}" == "basic" ]]; then
+    tests/scripts/github-action-helper.sh deploy_all_additional_resources_on_cluster
+fi
 
 echo "Setup CSI Addons"
 tests/scripts/csiaddons.sh setup_csiaddons

@@ -105,6 +105,7 @@ TEMP_FILE_NAME="vars.sh"
 cat <<-EOF >> "${CI_DIR}/../test_files/${TEMP_FILE_NAME}"
 CEPH_IMAGE="${CEPH_IMAGE}"
 BUILD_TAG="${BUILD_TAG}"
+TEST_TYPE="${TEST_TYPE}"
 EOF
 
 scp \

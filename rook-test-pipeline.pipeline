@@ -20,10 +20,13 @@ pipeline {
 
   parameters {
       string(name: 'CEPH_IMAGE', defaultValue: 'quay.io/ceph/ceph:v19', description: 'Ceph image to test with')
+      string(name: 'TEST_TYPE', defaultValue: 'basic', description: 'Test type to run')
   }
   environment {
-  BUILD_TAG = "${env.BUILD_TAG}"
-  TEST_EXECUTER_VM_NAME="${TEST_EXECUTER_VM_NAME}"
+    BUILD_TAG = "${env.BUILD_TAG}"
+    TEST_EXECUTER_VM_NAME="${TEST_EXECUTER_VM_NAME}"
+    CEPH_IMAGE="${env.CEPH_IMAGE}"
+    TEST_TYPE="${env.TEST_TYPE}"
   }
   stages {
     stage('SCM') {
