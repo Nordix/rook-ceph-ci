@@ -5,7 +5,7 @@ script {
   def dateFormat = new SimpleDateFormat("yyyyMMddHHmmss")
   def rand = new Random()
   VM_KEY = (1..4).collect { ('a'..'z').join("")[ rand.nextInt( 26 ) ] }.join("")
-  VM_NAME = "rook-ci-vm-" + dateFormat.format(date) + "-" + VM_KEY
+  TEST_EXECUTER_VM_NAME = "rook-ci-vm-" + dateFormat.format(date) + "-" + VM_KEY
 
   ci_git_branch = "main"
   ci_git_url = "https://github.com/Nordix/rook-ceph-ci.git"
@@ -21,6 +21,9 @@ pipeline {
     parameters {
         string(name: 'CEPH_IMAGE', defaultValue: 'quay.io/ceph/ceph:v19', description: 'Ceph image to test with')
     }
+    environment {
+    TEST_EXECUTER_VM_NAME="${TEST_EXECUTER_VM_NAME}"
+  }
     stages {
       stage('SCM') {
         options {
@@ -37,6 +40,7 @@ pipeline {
             ],
             doGenerateSubmoduleConfigurations: false,
             extensions: [
+              [$class: 'RelativeTargetDirectory', relativeTargetDir: 'rook-ceph-ci'],
               [$class: 'WipeWorkspace'],
               [$class: 'CleanCheckout'],
               [$class: 'CleanBeforeCheckout']

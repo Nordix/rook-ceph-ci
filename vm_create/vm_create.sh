@@ -7,6 +7,12 @@ CI_DIR="$(dirname "$(readlink -f "${0}")")"
 # shellcheck disable=SC1090
 source "${CI_DIR}/utils.sh"
 
+rm -rf venv
+python3 -m venv venv
+# shellcheck source=/dev/null
+. venv/bin/activate
+pip install python-openstackclient==7.0.0
+
 export OS_AUTH_URL=https://xerces.ericsson.net:5000
 export OS_PROJECT_ID=b62dc8622f87407589de9f7dcec13d25
 export OS_PROJECT_NAME="EST_Metal3_CI"
@@ -47,10 +53,6 @@ TEST_EXECUTER_IP="$(openstack port show -f json "${TEST_EXECUTER_PORT_NAME}" \
 echo "Waiting for the host ${TEST_EXECUTER_VM_NAME} to come up"
 # Wait for the host to come up
 wait_for_ssh "${ROOK_CI_USER}" "${ROOK_CI_USER_KEY}" "${TEST_EXECUTER_IP}"
-if ! vm_healthy "${ROOK_CI_USER}" "${ROOK_CI_USER_KEY}" "${TEST_EXECUTER_IP}"; then
-  echo "Server is unhealthy. Giving up."
-  exit 1
-fi
 
 TEMP_FILE_NAME="vars.sh"
 cat <<-EOF >> "${CI_DIR}/../test_files/${TEMP_FILE_NAME}"
@@ -72,4 +74,4 @@ ssh \
   -o ServerAliveCountMax=10 \
   -i "${ROOK_CI_USER_KEY}" \
   "${ROOK_CI_USER}"@"${TEST_EXECUTER_IP}" \
-  /tmp/run_integration_tests.sh /tmp/vars.sh
+  /tmp/test_files/run_integration_tests.sh /tmp/test_files/vars.sh
