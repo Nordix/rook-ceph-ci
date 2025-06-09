@@ -8,10 +8,16 @@
     kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
     git_repo_url: "https://github.com/Nordix/rook-ceph-ci.git"
     git_repo_local_path: "{{ ansible_env.HOME }}/rook-ceph-ci"
-    k8s_manifest_files:
+    k8s_manifest_files_rbd:
       - examples/rook-release-1.17/block-storage-test/storageclass-test.yaml
       - examples/rook-release-1.17/block-storage-test/pvc.yaml
       - examples/rook-release-1.17/block-storage-test/rbd-test-pod.yaml
+    k8s_manifest_files_objectstore:
+      - examples/rook-release-1.17/object-storage-test/object-store.yaml
+      - examples/rook-release-1.17/object-storage-test/object-store-user.yaml
+      - examples/rook-release-1.17/object-storage-test/object-storageclass.yaml
+      - examples/rook-release-1.17/object-storage-test/object-bucket-claim.yaml
+      - examples/rook-release-1.17/object-storage-test/objectstore-test-pod.yaml
 
   pre_tasks:
     - name: Ensure 'kubernetes' Python library is installed
@@ -39,7 +45,7 @@
         state: present
         src: "{{ git_repo_local_path }}/{{ item }}"
         kubeconfig: "{{ kubeconfig_path }}"
-      loop: "{{ k8s_manifest_files }}"
+      loop: "{{ k8s_manifest_files_rbd }}"
       register: k8s_apply_result
 
     - name: Wait for rbd-test-pod to be running
@@ -49,12 +55,10 @@
         name: rbd-test-pod
         namespace: default
         kubeconfig: "{{ kubeconfig_path }}"
-        wait: true
-        wait_timeout: 300
-        wait_condition:
-          status:
-            phase: Running
-      register: pod_status_result
+      register: pod_info
+      until: pod_info.resources[0].status.phase == "Running"
+      retries: 60
+      delay: 5
 
     - name: Verify test.txt exists in the pod
       ansible.builtin.shell: |
@@ -77,6 +81,53 @@
         state: absent
         src: "{{ git_repo_local_path }}/{{ item }}"
         kubeconfig: "{{ kubeconfig_path }}"
-      loop: "{{ k8s_manifest_files | reverse }}"
+      loop: "{{ k8s_manifest_files_rbd | reverse }}"
+      ignore_errors: true
+      when: true
+
+ # --- OBJECT STORE TEST SECTION ---
+    - name: "OBJECT STORE TEST: Deploy Kubernetes Manifests for Object Store"
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_objectstore }}"
+      register: obj_store_apply_result
+
+    - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete (Succeeded or Failed)"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: s3-test-pod
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: s3_pod_info
+      until: s3_pod_info.resources[0].status.phase in ["Succeeded", "Failed"]
+      retries: 120
+      delay: 5
+
+    - name: "OBJECT STORE TEST: Check s3-test-pod logs for success message"
+      ansible.builtin.shell: |
+        kubectl logs s3-test-pod -n default
+      register: s3_pod_logs
+      changed_when: false
+
+    - name: "OBJECT STORE TEST: Display s3-test-pod logs"
+      debug:
+        msg: "{{ s3_pod_logs.stdout }}"
+
+    - name: "OBJECT STORE TEST: Assert S3 test completed successfully"
+      assert:
+        that:
+          - "'Automated S3 test complete!' in s3_pod_logs.stdout"
+          - "'Failed' not in s3_pod_logs.stderr"
+        msg: "Object store test failed. Check s3-test-pod logs for details."
+
+    - name: "OBJECT STORE TEST: Clean up Kubernetes resources for Object Store"
+      kubernetes.core.k8s:
+        state: absent
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_objectstore | reverse }}"
       ignore_errors: true
       when: true
