@@ -1,0 +1,84 @@
+# Save this as objectstore-test-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: s3-test-pod
+  namespace: default # Ensure this matches the namespace where your OBC was created
+spec:
+  containers:
+  - name: awscli
+    image: amazon/aws-cli:2.15.22 # Using a specific version of AWS CLI for consistency
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      echo "--- Starting automated S3 test ---"
+      echo "AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}"
+      echo "AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}"
+      echo "BUCKET_HOST: ${BUCKET_HOST}"
+      echo "BUCKET_NAME: ${BUCKET_NAME}"
+      echo "AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}"
+      echo "AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}"
+      echo "----------------------------------"
+
+      # Step 1: List existing buckets (basic connectivity test)
+      echo "--- Listing buckets to verify connectivity ---"
+      aws s3api list-buckets --endpoint-url "${AWS_ENDPOINT_URL}" --no-verify-ssl || { echo "Failed to list buckets. Exiting."; exit 1; }
+      echo "Successfully connected to S3 endpoint."
+
+      # Step 2: Create a local test file
+      TEST_FILE_NAME="automated-test-file-$(date +%s).txt"
+      echo "This is an automated test file created by the Kubernetes pod." > "/tmp/${TEST_FILE_NAME}"
+      echo "Timestamp: $(date)" >> "/tmp/${TEST_FILE_NAME}"
+      echo "Local file created: /tmp/${TEST_FILE_NAME}"
+      cat "/tmp/${TEST_FILE_NAME}"
+
+      # Step 3: Upload the test file to S3
+      echo "--- Uploading ${TEST_FILE_NAME} to s3://${BUCKET_NAME}/${TEST_FILE_NAME} ---"
+      aws s3 cp "/tmp/${TEST_FILE_NAME}" "s3://${BUCKET_NAME}/${TEST_FILE_NAME}" --endpoint-url "${AWS_ENDPOINT_URL}" --no-verify-ssl || { echo "Failed to upload file. Exiting."; exit 1; }
+      echo "File uploaded successfully."
+
+      # Step 4: List objects in the bucket to verify upload
+      echo "--- Listing objects in s3://${BUCKET_NAME} to verify upload ---"
+      aws s3 ls "s3://${BUCKET_NAME}" --endpoint-url "${AWS_ENDPOINT_URL}" --no-verify-ssl || { echo "Failed to list objects after upload. Exiting."; exit 1; }
+
+      # Step 5: Download the file back
+      DOWNLOADED_FILE_NAME="downloaded-${TEST_FILE_NAME}"
+      echo "--- Downloading ${TEST_FILE_NAME} from S3 to /tmp/${DOWNLOADED_FILE_NAME} ---"
+      aws s3 cp "s3://${BUCKET_NAME}/${TEST_FILE_NAME}" "/tmp/${DOWNLOADED_FILE_NAME}" --endpoint-url "${AWS_ENDPOINT_URL}" --no-verify-ssl || { echo "Failed to download file. Exiting."; exit 1; }
+      echo "File downloaded successfully."
+
+      # Step 6: Verify content of the downloaded file
+      echo "--- Content of downloaded file (/tmp/${DOWNLOADED_FILE_NAME}): ---"
+      cat "/tmp/${DOWNLOADED_FILE_NAME}"
+
+      # Step 7: Clean up (optional) - delete the uploaded file
+      echo "--- Deleting ${TEST_FILE_NAME} from S3 (optional cleanup) ---"
+      aws s3 rm "s3://${BUCKET_NAME}/${TEST_FILE_NAME}" --endpoint-url "${AWS_ENDPOINT_URL}" --no-verify-ssl || { echo "Failed to delete file. Manual cleanup may be required."; }
+
+      echo "--- Automated S3 test complete! ---"
+    env: # Corrected: only one 'env' block
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: my-bucket # References the Secret created by the OBC
+          key: AWS_ACCESS_KEY_ID
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: my-bucket # References the Secret created by the OBC
+          key: AWS_SECRET_ACCESS_KEY
+    - name: BUCKET_HOST # Corrected: This key is in the ConfigMap
+      valueFrom:
+        configMapKeyRef: # Corrected: Source from ConfigMap
+          name: my-bucket
+          key: BUCKET_HOST # Corrected: Key name is BUCKET_HOST
+    - name: BUCKET_NAME # Corrected: This key is in the ConfigMap
+      valueFrom:
+        configMapKeyRef: # Corrected: Source from ConfigMap
+          name: my-bucket
+          key: BUCKET_NAME # Corrected: Key name is BUCKET_NAME
+    - name: AWS_ENDPOINT_URL # AWS CLI uses this for custom S3 endpoints
+      value: http://$(BUCKET_HOST) # Construct the endpoint URL using the BUCKET_HOST from ConfigMap
+    - name: AWS_DEFAULT_REGION # AWS CLI often requires a region, even if not strictly used by RGW
+      value: us-east-1 # Matches the region set in your StorageClass
+  restartPolicy: OnFailure # Pod will exit after completing the commands, or on failure.

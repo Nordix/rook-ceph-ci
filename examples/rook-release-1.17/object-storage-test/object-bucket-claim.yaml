@@ -1,0 +1,9 @@
+# obc.yaml
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: my-bucket
+  namespace: default
+spec:
+  generateBucketName: my-test-bucket
+  storageClassName: rook-ceph-bucket
