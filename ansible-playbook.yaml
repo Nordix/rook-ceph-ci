@@ -18,6 +18,8 @@
       - examples/rook-release-1.17/object-storage-test/object-storageclass.yaml
       - examples/rook-release-1.17/object-storage-test/object-bucket-claim.yaml
       - examples/rook-release-1.17/object-storage-test/objectstore-test-pod.yaml
+    k8s_manifest_files_objectstore_pod:
+      - examples/rook-release-1.17/object-storage-test/objectstore-test-pod.yaml
 
   pre_tasks:
     - name: Ensure 'kubernetes' Python library is installed
@@ -93,6 +95,50 @@
         kubeconfig: "{{ kubeconfig_path }}"
       loop: "{{ k8s_manifest_files_objectstore }}"
       register: obj_store_apply_result
+
+    - name: "OBJECT STORE TEST: Wait for ObjectBucketClaim 'my-bucket' to be Bound"
+      kubernetes.core.k8s_info:
+        api_version: objectbucket.io/v1alpha1
+        kind: ObjectBucketClaim
+        name: my-bucket
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: obc_info
+      until: obc_info.resources[0].status.phase == "Bound"
+      retries: 60 # Allow time for OBC to be provisioned
+      delay: 5
+
+    - name: "OBJECT STORE TEST: Wait for Kubernetes Secret 'my-bucket' to exist"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: my-bucket
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: my_bucket_secret_info
+      until: my_bucket_secret_info.resources | length > 0 # Checks if at least one resource is found
+      retries: 30 # Usually created quickly after OBC is bound
+      delay: 2
+
+    - name: "OBJECT STORE TEST: Wait for Kubernetes ConfigMap 'my-bucket' to exist"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: my-bucket
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: my_bucket_configmap_info
+      until: my_bucket_configmap_info.resources | length > 0 # Checks if at least one resource is found
+      retries: 30
+      delay: 2
+
+    - name: "OBJECT STORE TEST: Deploy S3 Test Pod"
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_objectstore_pod }}"
+      register: s3_pod_apply_result
 
     - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete (Succeeded or Failed)"
       kubernetes.core.k8s_info:
