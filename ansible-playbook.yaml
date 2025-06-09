@@ -1,0 +1,82 @@
+---
+- name: Test Rook-Ceph RBD Persistent Volume from GitHub
+  hosts: localhost
+  connection: local
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+    git_repo_url: "https://github.com/Nordix/rook-ceph-ci.git"
+    git_repo_local_path: "{{ ansible_env.HOME }}/rook-ceph-ci"
+    k8s_manifest_files:
+      - examples/rook-release-1.17/block-storage-test/storageclass-test.yaml
+      - examples/rook-release-1.17/block-storage-test/pvc.yaml
+      - examples/rook-release-1.17/block-storage-test/rbd-test-pod.yaml
+
+  pre_tasks:
+    - name: Ensure 'kubernetes' Python library is installed
+      pip:
+        name: kubernetes
+        executable: pip3
+        state: present
+      become: true
+      register: pip_install_result
+      until: pip_install_result is not failed
+      retries: 3
+      delay: 5
+
+  tasks:
+    - name: Clone the GitHub repository
+      ansible.builtin.git:
+        repo: "{{ git_repo_url }}"
+        dest: "{{ git_repo_local_path }}"
+        version: main
+        force: yes
+      delegate_to: localhost
+
+    - name: Apply Kubernetes manifests from GitHub repo
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files }}"
+      register: k8s_apply_result
+
+    - name: Wait for rbd-test-pod to be running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: rbd-test-pod
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+        wait: true
+        wait_timeout: 300
+        wait_condition:
+          status:
+            phase: Running
+      register: pod_status_result
+
+    - name: Verify test.txt exists in the pod
+      ansible.builtin.shell: |
+        kubectl exec rbd-test-pod -- cat /mnt/rbd/test.txt
+      register: file_check
+      changed_when: false
+
+    - name: Display file content
+      debug:
+        msg: "Content of test.txt: {{ file_check.stdout }}"
+
+    - name: Assert "RBD working!" is in the file
+      assert:
+        that:
+          - "'RBD working!' in file_check.stdout"
+        msg: "Failed: 'RBD working!' not found in /mnt/rbd/test.txt"
+
+    - name: Clean up Kubernetes resources (Optional)
+      kubernetes.core.k8s:
+        state: absent
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files | reverse }}"
+      ignore_errors: true
+      when: true
