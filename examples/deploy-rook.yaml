@@ -1,0 +1,155 @@
+---
+- name: Deploy Rook-Ceph Cluster and Verify Readiness
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    rook_ceph_namespace: rook-ceph
+    # Adjust paths if your manifests are not in the same directory
+    crds_manifest: ./release-1.17/crds.yaml
+    common_manifest: ./release-1.17/common.yaml
+    operator_manifest: ./release-1.17/operator.yaml
+    cluster_manifest: ./release-1.17/cluster.yaml
+    ceph_tools_pod_label: app=rook-ceph-tools
+
+  tasks:
+    - name: Apply Rook-Ceph CRDs, Common, and Operator manifests
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+        namespace: "{{ rook_ceph_namespace }}" # Or omit for cluster-scope if common.yaml defines it
+      loop:
+        - "{{ crds_manifest }}"
+        - "{{ common_manifest }}"
+        - "{{ operator_manifest }}"
+      register: apply_operator_result
+      until: apply_operator_result is not failed
+      retries: 5
+      delay: 5
+      tags: deploy_operator
+
+    - name: Wait for Rook-Ceph Operator deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: rook-ceph-operator
+        namespace: "{{ rook_ceph_namespace }}"
+      register: operator_deployment_info
+      until:
+        - operator_deployment_info.resources | length > 0
+        - operator_deployment_info.resources[0].status.readyReplicas is defined
+        - operator_deployment_info.resources[0].status.readyReplicas == operator_deployment_info.resources[0].spec.replicas
+      retries: 30
+      delay: 10
+      tags: wait_operator_ready
+
+    - name: Apply Rook-Ceph Cluster manifest
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ cluster_manifest }}"
+        namespace: "{{ rook_ceph_namespace }}"
+      register: apply_cluster_result
+      until: apply_cluster_result is not failed
+      retries: 5
+      delay: 10
+      tags: deploy_cluster
+
+    - name: Wait for Ceph Manager (MGR) pods to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ rook_ceph_namespace }}"
+        label_selectors:
+          - app=rook-ceph-mgr
+      register: mgr_pods
+      until:
+        - mgr_pods.resources | length >= 1 # At least one MGR pod
+        - mgr_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == mgr_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all MGR pods are ready
+      retries: 60
+      delay: 10
+      tags: wait_mgr_ready
+
+    - name: Wait for Ceph Monitor (MON) pods to be ready (at least 3)
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ rook_ceph_namespace }}"
+        label_selectors:
+          - app=rook-ceph-mon
+      register: mon_pods
+      until:
+        - mon_pods.resources | length >= 3 # At least 3 MON pods
+        - mon_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == mon_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all MON pods are ready
+      retries: 60
+      delay: 10
+      tags: wait_mon_ready
+
+    - name: Wait for Ceph OSD pods to be ready (at least 1, adjust as per cluster.yaml)
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ rook_ceph_namespace }}"
+        label_selectors:
+          - app=rook-ceph-osd
+      register: osd_pods
+      until:
+        - osd_pods.resources | length >= 1 # Adjust this count based on your cluster.yaml OSD count
+        - osd_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == osd_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all OSD pods are ready
+      retries: 60
+      delay: 10
+      tags: wait_osd_ready
+
+    - name: Get rook-ceph-tools pod name
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ rook_ceph_namespace }}"
+        label_selectors:
+          - "{{ ceph_tools_pod_label }}"
+      register: ceph_tools_pod_info
+      until:
+        - ceph_tools_pod_info.resources | length > 0
+        - ceph_tools_pod_info.resources[0].status.phase == 'Running'
+      retries: 10
+      delay: 5
+      tags: get_tools_pod
+
+    - name: Set fact for ceph tools pod name
+      set_fact:
+        ceph_tools_pod_name: "{{ ceph_tools_pod_info.resources[0].metadata.name }}"
+      tags: set_fact
+
+    - name: Check Ceph Cluster Health
+      command: >
+        kubectl -n {{ rook_ceph_namespace }} exec -it {{ ceph_tools_pod_name }} -- ceph status --format=json
+      register: ceph_status_output
+      until:
+        - ceph_status_output.rc == 0
+        - (ceph_status_output.stdout | from_json).health.overall_status == "HEALTH_OK" or
+          (ceph_status_output.stdout | from_json).health.overall_status == "HEALTH_WARN" # Allow WARN if expected in test setup
+      retries: 30
+      delay: 10
+      tags: check_ceph_health
+
+    - name: Display Ceph Cluster Health
+      debug:
+        msg: "Ceph Cluster Health: {{ (ceph_status_output.stdout | from_json).health.overall_status }}"
+      tags: display_health
+
+    - name: Report OSD Status from Ceph
+      command: >
+        kubectl -n {{ rook_ceph_namespace }} exec -it {{ ceph_tools_pod_name }} -- ceph osd tree --format=json
+      register: ceph_osd_tree
+      tags: report_osd_status
+
+    - name: Display OSD Status
+      debug:
+        msg: "Ceph OSD Tree: {{ ceph_osd_tree.stdout }}"
+      tags: display_osd_status
+
+    - name: Final Health Check - Fail if HEALTH_ERR
+      fail:
+        msg: "Ceph Cluster is in HEALTH_ERR state. Please investigate!"
+      when: (ceph_status_output.stdout | from_json).health.overall_status == "HEALTH_ERR"
+      tags: final_check

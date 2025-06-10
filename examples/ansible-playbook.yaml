@@ -9,16 +9,16 @@
     git_repo_url: "https://github.com/Nordix/rook-ceph-ci.git"
     git_repo_local_path: "{{ ansible_env.HOME }}/rook-ceph-ci"
     k8s_manifest_files_rbd:
-      - examples/rook-release-1.17/block-storage-test/storageclass-test.yaml
-      - examples/rook-release-1.17/block-storage-test/pvc.yaml
-      - examples/rook-release-1.17/block-storage-test/rbd-test-pod.yaml
+      - examples/release-1.17/block-storage-test/storageclass-test.yaml
+      - examples/release-1.17/block-storage-test/pvc.yaml
+      - examples/release-1.17/block-storage-test/rbd-test-pod.yaml
     k8s_manifest_files_objectstore:
-      - examples/rook-release-1.17/object-storage-test/object-store.yaml
-      - examples/rook-release-1.17/object-storage-test/object-store-user.yaml
-      - examples/rook-release-1.17/object-storage-test/object-storageclass.yaml
-      - examples/rook-release-1.17/object-storage-test/object-bucket-claim.yaml
+      - examples/release-1.17/object-storage-test/object-store.yaml
+      - examples/release-1.17/object-storage-test/object-store-user.yaml
+      - examples/release-1.17/object-storage-test/object-storageclass.yaml
+      - examples/release-1.17/object-storage-test/object-bucket-claim.yaml
     k8s_manifest_files_objectstore_pod:
-      - examples/rook-release-1.17/object-storage-test/objectstore-test-pod.yaml
+      - examples/release-1.17/object-storage-test/objectstore-test-pod.yaml
 
   pre_tasks:
     - name: Ensure 'kubernetes' Python library is installed
