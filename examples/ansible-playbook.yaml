@@ -17,7 +17,6 @@
       - examples/rook-release-1.17/object-storage-test/object-store-user.yaml
       - examples/rook-release-1.17/object-storage-test/object-storageclass.yaml
       - examples/rook-release-1.17/object-storage-test/object-bucket-claim.yaml
-      - examples/rook-release-1.17/object-storage-test/objectstore-test-pod.yaml
     k8s_manifest_files_objectstore_pod:
       - examples/rook-release-1.17/object-storage-test/objectstore-test-pod.yaml
 
@@ -105,7 +104,7 @@
         kubeconfig: "{{ kubeconfig_path }}"
       register: obc_info
       until: obc_info.resources[0].status.phase == "Bound"
-      retries: 60 # Allow time for OBC to be provisioned
+      retries: 60
       delay: 5
 
     - name: "OBJECT STORE TEST: Wait for Kubernetes Secret 'my-bucket' to exist"
@@ -116,8 +115,8 @@
         namespace: default
         kubeconfig: "{{ kubeconfig_path }}"
       register: my_bucket_secret_info
-      until: my_bucket_secret_info.resources | length > 0 # Checks if at least one resource is found
-      retries: 30 # Usually created quickly after OBC is bound
+      until: my_bucket_secret_info.resources | length > 0
+      retries: 30
       delay: 2
 
     - name: "OBJECT STORE TEST: Wait for Kubernetes ConfigMap 'my-bucket' to exist"
@@ -128,7 +127,7 @@
         namespace: default
         kubeconfig: "{{ kubeconfig_path }}"
       register: my_bucket_configmap_info
-      until: my_bucket_configmap_info.resources | length > 0 # Checks if at least one resource is found
+      until: my_bucket_configmap_info.resources | length > 0
       retries: 30
       delay: 2
 
