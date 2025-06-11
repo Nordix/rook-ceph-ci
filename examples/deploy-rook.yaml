@@ -6,7 +6,6 @@
 
   vars:
     rook_ceph_namespace: rook-ceph
-    # Adjust paths if your manifests are not in the same directory
     crds_manifest: ./release-1.17/crds.yaml
     common_manifest: ./release-1.17/common.yaml
     operator_manifest: ./release-1.17/operator.yaml
@@ -18,7 +17,7 @@
       kubernetes.core.k8s:
         state: present
         src: "{{ item }}"
-        namespace: "{{ rook_ceph_namespace }}" # Or omit for cluster-scope if common.yaml defines it
+        namespace: "{{ rook_ceph_namespace }}"
       loop:
         - "{{ crds_manifest }}"
         - "{{ common_manifest }}"
@@ -64,7 +63,7 @@
           - app=rook-ceph-mgr
       register: mgr_pods
       until:
-        - mgr_pods.resources | length >= 1 # At least one MGR pod
+        - mgr_pods.resources | length >= 1
         - mgr_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == mgr_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all MGR pods are ready
       retries: 60
       delay: 10
@@ -79,7 +78,7 @@
           - app=rook-ceph-mon
       register: mon_pods
       until:
-        - mon_pods.resources | length >= 3 # At least 3 MON pods
+        - mon_pods.resources | length >= 3
         - mon_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == mon_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all MON pods are ready
       retries: 60
       delay: 10
@@ -94,11 +93,16 @@
           - app=rook-ceph-osd
       register: osd_pods
       until:
-        - osd_pods.resources | length >= 1 # Adjust this count based on your cluster.yaml OSD count
+        - osd_pods.resources | length >= 1
         - osd_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == osd_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all OSD pods are ready
       retries: 60
       delay: 10
       tags: wait_osd_ready
+
+    - name: Deploy Rook toolbox pod
+      kubernetes.core.k8s:
+        state: present
+        src: https://raw.githubusercontent.com/rook/rook/refs/heads/release-1.17/deploy/examples/toolbox.yaml
 
     - name: Get rook-ceph-tools pod name
       kubernetes.core.k8s_info:
@@ -126,15 +130,15 @@
       register: ceph_status_output
       until:
         - ceph_status_output.rc == 0
-        - (ceph_status_output.stdout | from_json).health.overall_status == "HEALTH_OK" or
-          (ceph_status_output.stdout | from_json).health.overall_status == "HEALTH_WARN" # Allow WARN if expected in test setup
+        - (ceph_status_output.stdout | from_json).health.status == "HEALTH_OK" or
+          (ceph_status_output.stdout | from_json).health.status == "HEALTH_WARN"
       retries: 30
       delay: 10
       tags: check_ceph_health
 
     - name: Display Ceph Cluster Health
       debug:
-        msg: "Ceph Cluster Health: {{ (ceph_status_output.stdout | from_json).health.overall_status }}"
+        msg: "Ceph Cluster Health: {{ (ceph_status_output.stdout | from_json).health.status }}"
       tags: display_health
 
     - name: Report OSD Status from Ceph
@@ -151,5 +155,5 @@
     - name: Final Health Check - Fail if HEALTH_ERR
       fail:
         msg: "Ceph Cluster is in HEALTH_ERR state. Please investigate!"
-      when: (ceph_status_output.stdout | from_json).health.overall_status == "HEALTH_ERR"
+      when: (ceph_status_output.stdout | from_json).health.status  == "HEALTH_ERR"
       tags: final_check

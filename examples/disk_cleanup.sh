@@ -1,48 +1,15 @@
 #!/bin/bash
-
-# Ceph Disk Cleanup Script
-# Usage: sudo ./disk_cleanup.sh /dev/sdb
-
 set -euo pipefail
+sudo dmsetup ls --target crypt --target linear || true
+mapfile -t DM_DEVICES < <(sudo dmsetup ls | awk '{print $1}' | grep -E '(^q|^ceph--)' | tac)
 
-DEVICE="${1:-}"
-
-# Step 0: Validate input
-if [[ -z "$DEVICE" || ! -b "$DEVICE" ]]; then
-    echo "❌ Error: No valid block device given."
-    echo "Usage: $0 /dev/sdX"
-    exit 1
+if [ ${#DM_DEVICES[@]} -eq 0 ]; then
+  echo "No matching Ceph/crypt device-mapper entries found. Nothing to clean."
+  exit 0
 fi
 
-echo "🔍 Cleaning Ceph OSD disk: $DEVICE"
-
-# Step 1: Unmap any crypt devices under this disk
-echo "📦 Checking for crypt devices..."
-lsblk -ln -o NAME "$DEVICE" | tail -n +2 | while read -r child; do
-    if [[ -e "/dev/mapper/$child" ]]; then
-        echo "🗝️ Closing crypt device: $child"
-        sudo cryptsetup luksClose "$child" 2>/dev/null || true
-        sudo dmsetup remove -f "$child" 2>/dev/null || true
-    fi
+for dev in "${DM_DEVICES[@]}"; do
+  sudo dmsetup remove -f "$dev" || echo "Failed to remove $dev"
 done
 
-# Step 2: Unmap any LVM/dmsetup mappings
-echo "🧩 Checking for LVM/dmsetup mappings..."
-MAPPERS=$(lsblk -ln -o NAME "$DEVICE" | tail -n +2)
-
-for mapper in $MAPPERS; do
-    if [[ -e "/dev/mapper/$mapper" ]]; then
-        echo "🧹 Removing LVM or dmsetup mapping: $mapper"
-        sudo dmsetup remove -f "$mapper" || true
-    fi
-done
-
-# Step 3: Wipe signatures
-echo "🧽 Wiping filesystem and partition table signatures..."
-sudo wipefs -a "$DEVICE"
-
-# Final check
-echo "🔍 Final state:"
-lsblk "$DEVICE"
-
-echo "✅ Disk $DEVICE cleanup complete."
+sudo wipefs -a /dev/sdb

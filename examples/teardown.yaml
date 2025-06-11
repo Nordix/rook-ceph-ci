@@ -4,6 +4,7 @@
   gather_facts: false
   become: true # Use sudo for kubectl commands
 
+
   vars:
     rook_ceph_namespace: "rook-ceph"
     rook_operator_yaml: "./release-1.17/operator.yaml"
@@ -12,80 +13,64 @@
     disk_cleanup_script_path: "disk_cleanup_script.sh"
 
   tasks:
-    - name: Patch CephCluster to enable data destruction
-      ansible.builtin.shell: |
-        kubectl -n {{ rook_ceph_namespace }} patch cephcluster rook-ceph --type merge -p '{"spec":{"cleanupPolicy":{"confirmation":"yes-really-destroy-data"}}}'
-      register: patch_output
-      until: patch_output.rc == 0
-      retries: 5
-      delay: 10
-      args:
-        warn: false
-      failed_when: "'Error from server (NotFound)' not in patch_output.stderr and patch_output.rc != 0"
-      changed_when: true
-      ignore_errors: true
+    - name: Patch CephCluster cleanup policy
+      kubernetes.core.k8s:
+        api_version: ceph.rook.io/v1
+        kind: CephCluster
+        name: rook-ceph
+        namespace: "{{ rook_ceph_namespace }}"
+        state: patched
+        definition:
+          spec:
+            cleanupPolicy:
+              confirmation: "yes-really-destroy-data"
+        kubeconfig: "/home/metal3/.kube/config"
 
     - name: Delete CephCluster
-      ansible.builtin.shell: |
-        kubectl -n {{ rook_ceph_namespace }} delete cephcluster rook-ceph
-      register: delete_cluster_output
-      until: delete_cluster_output.rc == 0
-      retries: 5
-      delay: 10
-      args:
-        warn: false
-      failed_when: "'Error from server (NotFound)' not in delete_cluster_output.stderr and delete_cluster_output.rc != 0"
-      changed_when: true
-      ignore_errors: true
+      kubernetes.core.k8s:
+        api_version: ceph.rook.io/v1
+        kind: CephCluster
+        name: rook-ceph
+        namespace: "{{ rook_ceph_namespace }}"
+        state: absent
+        kubeconfig: "/home/metal3/.kube/config"
 
-    - name: Verify CephCluster is deleted
-      ansible.builtin.shell: |
-        kubectl -n {{ rook_ceph_namespace }} get cephcluster
-      register: verify_cluster_output
-      until: "'No resources found in' in verify_cluster_output.stdout or verify_cluster_output.rc != 0"
-      retries: 20 # Give it time to delete
-      delay: 10
-      args:
-        warn: false
-      changed_when: false
-      ignore_errors: true
+    - name: Wait until CephCluster deleted
+      kubernetes.core.k8s_info:
+        api_version: ceph.rook.io/v1
+        kind: CephCluster
+        name: rook-ceph
+        namespace: "{{ rook_ceph_namespace }}"
+        kubeconfig: "/home/metal3/.kube/config"
+      register: cephcluster_deletion
+      retries: 150
+      delay: 3
+      until: (cephcluster_deletion is succeeded) and
+             (cephcluster_deletion.resources | length ==  0)
 
-    - name: Delete Rook operator, common, and CRDs
-      ansible.builtin.shell: |
-        kubectl delete -f {{ rook_operator_yaml }}
-        kubectl delete -f {{ rook_common_yaml }}
-        kubectl delete -f {{ rook_crds_yaml }}
-      args:
-        warn: false
-      ignore_errors: true
-      changed_when: true
+    - name: Delete each specified Kubernetes object file
+      kubernetes.core.k8s:
+        src: "{{ item }}"
+        state: absent
+        kubeconfig: "/home/metal3/.kube/config"
+      loop:
+        - "./release-1.17/operator.yaml"
+        - "./release-1.17/common.yaml"
+        - "./release-1.17/crds.yaml"
+      loop_control:
+        label: "{{ item }}"
 
 - name: Run disk cleanup script on worker nodes
   hosts: kube_worker_nodes
   gather_facts: false
   become: true
 
-  vars:
-    disk_cleanup_script_path: "disk_cleanup.sh"
-
   tasks:
-    - name: Ensure disk cleanup script is present on worker node
+    - name: Copy disk cleanup script to remote node
       ansible.builtin.copy:
-        src: "{{ disk_cleanup_script_path }}"
-        dest: "/usr/local/bin/rook_disk_cleanup.sh"
-        mode: "0755"
+        src: disk_cleanup.sh
+        dest: /tmp/disk_cleanup.sh
+        mode: '0755'
 
-    - name: Run disk cleanup script
-      ansible.builtin.shell: |
-        /usr/local/bin/rook_disk_cleanup.sh /dev/sdb
-      args:
-        warn: false
-      register: cleanup_result
-      changed_when: true
-      # You might want to fail this if the script indicates an error,
-      # or just log it based on your script's output.
-      # failed_when: cleanup_result.rc != 0
-      # Use `debug` to see output if needed
-    - name: Display disk cleanup script output
-      ansible.builtin.debug:
-        var: cleanup_result.stdout_lines
+    - name: Run disk cleanup script on remote node
+      ansible.builtin.shell: /tmp/disk_cleanup.sh
