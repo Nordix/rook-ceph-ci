@@ -1,0 +1,167 @@
+---
+- name: Test Rook-Ceph RBD Persistent Volume from GitHub
+  hosts: kube_control_plane
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+    k8s_manifest_files_rbd:
+      - tmp/release-1.17/block-storage-test/storageclass-test.yaml
+      - tmp/release-1.17/block-storage-test/pvc.yaml
+      - tmp/release-1.17/block-storage-test/rbd-test-pod.yaml
+    k8s_manifest_files_objectstore:
+      - tmp/release-1.17/object-storage-test/object-store.yaml
+      - tmp/release-1.17/object-storage-test/object-store-user.yaml
+      - tmp/release-1.17/object-storage-test/object-storageclass.yaml
+      - tmp/release-1.17/object-storage-test/object-bucket-claim.yaml
+    k8s_manifest_files_objectstore_pod:
+      - tmp/release-1.17/object-storage-test/objectstore-test-pod.yaml
+
+  pre_tasks:
+    - name: Ensure 'kubernetes' Python library is installed
+      pip:
+        name: kubernetes
+        executable: pip3
+        state: present
+      become: true
+      register: pip_install_result
+      until: pip_install_result is not failed
+      retries: 3
+      delay: 5
+
+  tasks:
+    - name: Apply Kubernetes manifests from GitHub repo
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_rbd }}"
+      register: k8s_apply_result
+
+    - name: Wait for rbd-test-pod to be running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: rbd-test-pod
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: pod_info
+      until: pod_info.resources[0].status.phase == "Running"
+      retries: 60
+      delay: 5
+
+    - name: Verify test.txt exists in the pod
+      ansible.builtin.shell: |
+        kubectl exec rbd-test-pod -- cat /mnt/rbd/test.txt
+      register: file_check
+      changed_when: false
+
+    - name: Display file content
+      debug:
+        msg: "Content of test.txt: {{ file_check.stdout }}"
+
+    - name: Assert "RBD working!" is in the file
+      assert:
+        that:
+          - "'RBD working!' in file_check.stdout"
+        msg: "Failed: 'RBD working!' not found in /mnt/rbd/test.txt"
+
+    - name: Clean up Kubernetes resources (Optional)
+      kubernetes.core.k8s:
+        state: absent
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_rbd | reverse }}"
+      ignore_errors: true
+      when: true
+
+ # --- OBJECT STORE TEST SECTION ---
+    - name: "OBJECT STORE TEST: Deploy Kubernetes Manifests for Object Store"
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_objectstore }}"
+      register: obj_store_apply_result
+
+    - name: "OBJECT STORE TEST: Wait for ObjectBucketClaim 'my-bucket' to be Bound"
+      kubernetes.core.k8s_info:
+        api_version: objectbucket.io/v1alpha1
+        kind: ObjectBucketClaim
+        name: my-bucket
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: obc_info
+      until: obc_info.resources[0].status.phase == "Bound"
+      retries: 60
+      delay: 5
+
+    - name: "OBJECT STORE TEST: Wait for Kubernetes Secret 'my-bucket' to exist"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: my-bucket
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: my_bucket_secret_info
+      until: my_bucket_secret_info.resources | length > 0
+      retries: 30
+      delay: 2
+
+    - name: "OBJECT STORE TEST: Wait for Kubernetes ConfigMap 'my-bucket' to exist"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: my-bucket
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: my_bucket_configmap_info
+      until: my_bucket_configmap_info.resources | length > 0
+      retries: 30
+      delay: 2
+
+    - name: "OBJECT STORE TEST: Deploy S3 Test Pod"
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_objectstore_pod }}"
+      register: s3_pod_apply_result
+
+    - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete (Succeeded or Failed)"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: s3-test-pod
+        namespace: default
+        kubeconfig: "{{ kubeconfig_path }}"
+      register: s3_pod_info
+      until: s3_pod_info.resources[0].status.phase in ["Succeeded", "Failed"]
+      retries: 120
+      delay: 5
+
+    - name: "OBJECT STORE TEST: Check s3-test-pod logs for success message"
+      ansible.builtin.shell: |
+        kubectl logs s3-test-pod -n default
+      register: s3_pod_logs
+      changed_when: false
+
+    - name: "OBJECT STORE TEST: Display s3-test-pod logs"
+      debug:
+        msg: "{{ s3_pod_logs.stdout }}"
+
+    - name: "OBJECT STORE TEST: Assert S3 test completed successfully"
+      assert:
+        that:
+          - "'Automated S3 test complete!' in s3_pod_logs.stdout"
+          - "'Failed' not in s3_pod_logs.stderr"
+        msg: "Object store test failed. Check s3-test-pod logs for details."
+
+    - name: "OBJECT STORE TEST: Clean up Kubernetes resources for Object Store"
+      kubernetes.core.k8s:
+        state: absent
+        src: "{{ git_repo_local_path }}/{{ item }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+      loop: "{{ k8s_manifest_files_objectstore | reverse }}"
+      ignore_errors: true
+      when: true

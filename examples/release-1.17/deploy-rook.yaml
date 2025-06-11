@@ -1,36 +1,18 @@
 ---
 - name: Deploy Rook-Ceph Cluster and Verify Readiness
   hosts: kube_control_plane
+  connection: local
   gather_facts: false
 
   vars:
     rook_ceph_namespace: rook-ceph
-    crds_manifest: ./tmp/release-1.17/crds.yaml
-    common_manifest: ./tmp/release-1.17/common.yaml
-    operator_manifest: ./tmp/release-1.17/operator.yaml
-    cluster_manifest: ./tmp/release-1.17/cluster.yaml
+    crds_manifest: ./release-1.17/crds.yaml
+    common_manifest: ./release-1.17/common.yaml
+    operator_manifest: ./release-1.17/operator.yaml
+    cluster_manifest: ./release-1.17/cluster.yaml
     ceph_tools_pod_label: app=rook-ceph-tools
 
   tasks:
-    - name: Get control plane node name
-      command: kubectl get nodes -o json
-      register: nodes_json
-
-    - name: Find control plane node
-      set_fact:
-        control_plane_node: >-
-          {{ nodes_json.stdout | from_json | json_query("items[?metadata.labels.\"node-role.kubernetes.io/control-plane\"].metadata.name") | first }}
-
-    - name: Remove NoSchedule taint from control-plane
-      command: >
-        kubectl taint node {{ control_plane_node }} node-role.kubernetes.io/control-plane:NoSchedule-
-      when: control_plane_node is defined
-
-    - name: Copy rook test files to control plane
-      copy:
-        src: "release-1.17/"
-        dest: "/tmp/release-1.17/"
-
     - name: Apply Rook-Ceph CRDs, Common, and Operator manifests
       kubernetes.core.k8s:
         state: present
@@ -173,5 +155,5 @@
     - name: Final Health Check - Fail if HEALTH_ERR
       fail:
         msg: "Ceph Cluster is in HEALTH_ERR state. Please investigate!"
-      when: (ceph_status_output.stdout | from_json).health..status  == "HEALTH_ERR"
+      when: (ceph_status_output.stdout | from_json).health.status  == "HEALTH_ERR"
       tags: final_check

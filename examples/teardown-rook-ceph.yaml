@@ -1,0 +1,84 @@
+---
+- name: Rook-Ceph Teardown Playbook
+  hosts: kube_control_plane
+  gather_facts: false
+  become: true
+
+
+  vars:
+    rook_ceph_namespace: "rook-ceph"
+    rook_operator_yaml: "tmp/release-1.17/operator.yaml"
+    rook_common_yaml: "tmp/release-1.17//common.yaml"
+    rook_crds_yaml: "tmp/release-1.17/crds.yaml"
+
+  tasks:
+    - name: Patch CephCluster cleanup policy
+      kubernetes.core.k8s:
+        api_version: ceph.rook.io/v1
+        kind: CephCluster
+        name: rook-ceph
+        namespace: "{{ rook_ceph_namespace }}"
+        state: patched
+        definition:
+          spec:
+            cleanupPolicy:
+              confirmation: "yes-really-destroy-data"
+        kubeconfig: "/home/metal3/.kube/config"
+
+    - name: Delete CephCluster
+      kubernetes.core.k8s:
+        api_version: ceph.rook.io/v1
+        kind: CephCluster
+        name: rook-ceph
+        namespace: "{{ rook_ceph_namespace }}"
+        state: absent
+        kubeconfig: "/home/metal3/.kube/config"
+
+    - name: Wait until CephCluster deleted
+      kubernetes.core.k8s_info:
+        api_version: ceph.rook.io/v1
+        kind: CephCluster
+        name: rook-ceph
+        namespace: "{{ rook_ceph_namespace }}"
+        kubeconfig: "/home/metal3/.kube/config"
+      register: cephcluster_deletion
+      retries: 150
+      delay: 3
+      until: (cephcluster_deletion is succeeded) and
+             (cephcluster_deletion.resources | length ==  0)
+
+    - name: Delete each specified Kubernetes object file
+      kubernetes.core.k8s:
+        src: "{{ item }}"
+        state: absent
+        kubeconfig: "/home/metal3/.kube/config"
+      loop:
+        - "./release-1.17/operator.yaml"
+        - "./release-1.17/common.yaml"
+        - "./release-1.17/crds.yaml"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Copy disk cleanup script to remote node
+      ansible.builtin.copy:
+        src: disk_cleanup.sh
+        dest: /tmp/disk_cleanup.sh
+        mode: '0755'
+
+    - name: Run disk cleanup script on remote node
+      ansible.builtin.shell: /tmp/disk_cleanup.sh
+
+- name: Run disk cleanup script on worker nodes
+  hosts: kube_worker_nodes
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Copy disk cleanup script to remote node
+      ansible.builtin.copy:
+        src: disk_cleanup.sh
+        dest: /tmp/disk_cleanup.sh
+        mode: '0755'
+
+    - name: Run disk cleanup script on remote node
+      ansible.builtin.shell: /tmp/disk_cleanup.sh
