@@ -10,8 +10,22 @@
     operator_manifest: /tmp/release-1.17/operator.yaml
     cluster_manifest: /tmp/release-1.17/cluster.yaml
     ceph_tools_pod_label: app=rook-ceph-tools
+    ansible_python_interpreter: /usr/bin/python3.9
 
   tasks:
+    - name: Ensure pip3 is installed (CentOS Stream 9)
+      ansible.builtin.dnf:
+        name: python3-pip
+        state: present
+        disablerepo: kubernetes
+      become: true
+
+    - name: Install kubernetes Python module
+      ansible.builtin.pip:
+        name: kubernetes
+        executable: pip3
+      become: true
+
     - name: Get Control Plane Node Name
       shell: kubectl get nodes -o json
       register: nodes_output
