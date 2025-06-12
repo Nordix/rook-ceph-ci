@@ -7,7 +7,7 @@
     ansible_python_interpreter: /usr/bin/python3
     kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
     git_repo_url: "https://github.com/Nordix/rook-ceph-ci.git"
-    git_repo_local_path: "{{ ansible_env.HOME }}/rook-ceph-ci"
+
     k8s_manifest_files_rbd:
       - examples/release-1.17/block-storage-test/storageclass-test.yaml
       - examples/release-1.17/block-storage-test/pvc.yaml
@@ -139,7 +139,7 @@
       loop: "{{ k8s_manifest_files_objectstore_pod }}"
       register: s3_pod_apply_result
 
-    - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete (Succeeded or Failed)"
+    - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete"
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod

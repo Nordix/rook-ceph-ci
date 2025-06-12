@@ -16,9 +16,12 @@
       shell: kubectl get nodes -o json
       register: nodes_output
 
-    - name: Parse Node Details
+    - name: Parse Control Plane Node Name
       set_fact:
-        control_plane_node: "{{ nodes_output.stdout|from_json|json_query('items[?roles[].contains(\"control-plane\")]') }}"
+        control_plane_node: >-
+          {{ nodes_output.stdout | from_json |
+            json_query("items[?spec.taints[?key=='node-role.kubernetes.io/control-plane']].metadata.name") | first }}
+      ignore_errors: true
 
     - name: Remove NoSchedule taint from control-plane
       command: >
@@ -102,7 +105,7 @@
       delay: 10
       tags: wait_mon_ready
 
-    - name: Wait for Ceph OSD pods to be ready (at least 1, adjust as per cluster.yaml)
+    - name: Wait for Ceph OSD pods to be ready
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
@@ -111,7 +114,7 @@
           - app=rook-ceph-osd
       register: osd_pods
       until:
-        - osd_pods.resources | length >= 1
+        - osd_pods.resources | length >= 2
         - osd_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == osd_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all OSD pods are ready
       retries: 60
       delay: 10
@@ -173,5 +176,5 @@
     - name: Final Health Check - Fail if HEALTH_ERR
       fail:
         msg: "Ceph Cluster is in HEALTH_ERR state. Please investigate!"
-      when: (ceph_status_output.stdout | from_json).health..status  == "HEALTH_ERR"
+      when: (ceph_status_output.stdout | from_json).health.status == "HEALTH_ERR"
       tags: final_check

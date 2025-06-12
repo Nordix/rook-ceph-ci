@@ -84,7 +84,7 @@
       delay: 10
       tags: wait_mon_ready
 
-    - name: Wait for Ceph OSD pods to be ready (at least 1, adjust as per cluster.yaml)
+    - name: Wait for Ceph OSD pods to be ready
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
@@ -93,7 +93,7 @@
           - app=rook-ceph-osd
       register: osd_pods
       until:
-        - osd_pods.resources | length >= 1
+        - osd_pods.resources | length >= 2
         - osd_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == osd_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all OSD pods are ready
       retries: 60
       delay: 10

@@ -8,7 +8,7 @@
   vars:
     rook_ceph_namespace: "rook-ceph"
     rook_operator_yaml: "/tmp/release-1.17/operator.yaml"
-    rook_common_yaml: "/tmp/release-1.17//common.yaml"
+    rook_common_yaml: "/tmp/release-1.17/common.yaml"
     rook_crds_yaml: "/tmp/release-1.17/crds.yaml"
 
   tasks:

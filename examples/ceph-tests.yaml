@@ -6,28 +6,16 @@
     ansible_python_interpreter: /usr/bin/python3
     kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
     k8s_manifest_files_rbd:
-      - tmp/release-1.17/block-storage-test/storageclass-test.yaml
-      - tmp/release-1.17/block-storage-test/pvc.yaml
-      - tmp/release-1.17/block-storage-test/rbd-test-pod.yaml
+      - /tmp/release-1.17/block-storage-test/storageclass-test.yaml
+      - /tmp/release-1.17/block-storage-test/pvc.yaml
+      - /tmp/release-1.17/block-storage-test/rbd-test-pod.yaml
     k8s_manifest_files_objectstore:
-      - tmp/release-1.17/object-storage-test/object-store.yaml
-      - tmp/release-1.17/object-storage-test/object-store-user.yaml
-      - tmp/release-1.17/object-storage-test/object-storageclass.yaml
-      - tmp/release-1.17/object-storage-test/object-bucket-claim.yaml
+      - /tmp/release-1.17/object-storage-test/object-store.yaml
+      - /tmp/release-1.17/object-storage-test/object-store-user.yaml
+      - /tmp/release-1.17/object-storage-test/object-storageclass.yaml
+      - /tmp/release-1.17/object-storage-test/object-bucket-claim.yaml
     k8s_manifest_files_objectstore_pod:
-      - tmp/release-1.17/object-storage-test/objectstore-test-pod.yaml
-
-  pre_tasks:
-    - name: Ensure 'kubernetes' Python library is installed
-      pip:
-        name: kubernetes
-        executable: pip3
-        state: present
-      become: true
-      register: pip_install_result
-      until: pip_install_result is not failed
-      retries: 3
-      delay: 5
+      - /tmp/release-1.17/object-storage-test/objectstore-test-pod.yaml
 
   tasks:
     - name: Apply Kubernetes manifests from GitHub repo
@@ -66,10 +54,10 @@
           - "'RBD working!' in file_check.stdout"
         msg: "Failed: 'RBD working!' not found in /mnt/rbd/test.txt"
 
-    - name: Clean up Kubernetes resources (Optional)
+    - name: Clean up RBD test objects
       kubernetes.core.k8s:
         state: absent
-        src: "{{ git_repo_local_path }}/{{ item }}"
+        src: "{{ item }}"
         kubeconfig: "{{ kubeconfig_path }}"
       loop: "{{ k8s_manifest_files_rbd | reverse }}"
       ignore_errors: true
@@ -79,7 +67,7 @@
     - name: "OBJECT STORE TEST: Deploy Kubernetes Manifests for Object Store"
       kubernetes.core.k8s:
         state: present
-        src: "{{ git_repo_local_path }}/{{ item }}"
+        src: "{{ item }}"
         kubeconfig: "{{ kubeconfig_path }}"
       loop: "{{ k8s_manifest_files_objectstore }}"
       register: obj_store_apply_result
@@ -123,12 +111,12 @@
     - name: "OBJECT STORE TEST: Deploy S3 Test Pod"
       kubernetes.core.k8s:
         state: present
-        src: "{{ git_repo_local_path }}/{{ item }}"
+        src: "{{ item }}"
         kubeconfig: "{{ kubeconfig_path }}"
       loop: "{{ k8s_manifest_files_objectstore_pod }}"
       register: s3_pod_apply_result
 
-    - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete (Succeeded or Failed)"
+    - name: "OBJECT STORE TEST: Wait for s3-test-pod to complete"
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Pod
@@ -160,8 +148,7 @@
     - name: "OBJECT STORE TEST: Clean up Kubernetes resources for Object Store"
       kubernetes.core.k8s:
         state: absent
-        src: "{{ git_repo_local_path }}/{{ item }}"
+        src: "{{ item }}"
         kubeconfig: "{{ kubeconfig_path }}"
-      loop: "{{ k8s_manifest_files_objectstore | reverse }}"
+      loop: "{{ ((k8s_manifest_files_objectstore | reverse) + k8s_manifest_files_objectstore_pod) | flatten(1) }}"
       ignore_errors: true
-      when: true
