@@ -5,26 +5,26 @@
 
   vars:
     rook_ceph_namespace: rook-ceph
-    crds_manifest: ./tmp/release-1.17/crds.yaml
-    common_manifest: ./tmp/release-1.17/common.yaml
-    operator_manifest: ./tmp/release-1.17/operator.yaml
-    cluster_manifest: ./tmp/release-1.17/cluster.yaml
+    crds_manifest: /tmp/release-1.17/crds.yaml
+    common_manifest: /tmp/release-1.17/common.yaml
+    operator_manifest: /tmp/release-1.17/operator.yaml
+    cluster_manifest: /tmp/release-1.17/cluster.yaml
     ceph_tools_pod_label: app=rook-ceph-tools
 
   tasks:
-    - name: Get control plane node name
-      command: kubectl get nodes -o json
-      register: nodes_json
+    - name: Get Control Plane Node Name
+      shell: kubectl get nodes -o json
+      register: nodes_output
 
-    - name: Find control plane node
+    - name: Parse Node Details
       set_fact:
-        control_plane_node: >-
-          {{ nodes_json.stdout | from_json | json_query("items[?metadata.labels.\"node-role.kubernetes.io/control-plane\"].metadata.name") | first }}
+        control_plane_node: "{{ nodes_output.stdout|from_json|json_query('items[?roles[].contains(\"control-plane\")]') }}"
 
     - name: Remove NoSchedule taint from control-plane
       command: >
         kubectl taint node {{ control_plane_node }} node-role.kubernetes.io/control-plane:NoSchedule-
       when: control_plane_node is defined
+      ignore_errors: true
 
     - name: Copy rook test files to control plane
       copy:

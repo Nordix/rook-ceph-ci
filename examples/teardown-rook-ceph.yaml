@@ -7,9 +7,9 @@
 
   vars:
     rook_ceph_namespace: "rook-ceph"
-    rook_operator_yaml: "tmp/release-1.17/operator.yaml"
-    rook_common_yaml: "tmp/release-1.17//common.yaml"
-    rook_crds_yaml: "tmp/release-1.17/crds.yaml"
+    rook_operator_yaml: "/tmp/release-1.17/operator.yaml"
+    rook_common_yaml: "/tmp/release-1.17//common.yaml"
+    rook_crds_yaml: "/tmp/release-1.17/crds.yaml"
 
   tasks:
     - name: Patch CephCluster cleanup policy
@@ -47,29 +47,20 @@
       until: (cephcluster_deletion is succeeded) and
              (cephcluster_deletion.resources | length ==  0)
 
-    - name: Delete each specified Kubernetes object file
+    - name: Delete operator.yaml, common.yaml, crds.yaml
       kubernetes.core.k8s:
         src: "{{ item }}"
         state: absent
         kubeconfig: "/home/metal3/.kube/config"
       loop:
-        - "./release-1.17/operator.yaml"
-        - "./release-1.17/common.yaml"
-        - "./release-1.17/crds.yaml"
+        - "{{ rook_operator_yaml }}"
+        - "{{ rook_common_yaml }}"
+        - "{{ rook_crds_yaml }}"
       loop_control:
         label: "{{ item }}"
 
-    - name: Copy disk cleanup script to remote node
-      ansible.builtin.copy:
-        src: disk_cleanup.sh
-        dest: /tmp/disk_cleanup.sh
-        mode: '0755'
-
-    - name: Run disk cleanup script on remote node
-      ansible.builtin.shell: /tmp/disk_cleanup.sh
-
-- name: Run disk cleanup script on worker nodes
-  hosts: kube_worker_nodes
+- name: Run disk cleanup script on nodes
+  hosts: kube_all_nodes
   gather_facts: false
   become: true
 
