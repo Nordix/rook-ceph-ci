@@ -1,7 +1,7 @@
 ---
 - name: Rook-Ceph Teardown Playbook
-  hosts: kube_control_plane
-  gather_facts: false
+  hosts: kube_control_plane1
+  gather_facts: true
   become: true
 
 

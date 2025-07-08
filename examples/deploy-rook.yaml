@@ -1,7 +1,7 @@
 ---
 - name: Deploy Rook-Ceph Cluster and Verify Readiness
-  hosts: kube_control_plane
-  gather_facts: false
+  hosts: kube_control_plane1
+  gather_facts: true
 
   vars:
     rook_ceph_namespace: rook-ceph
@@ -10,8 +10,7 @@
     operator_manifest: /tmp/release-1.17/operator.yaml
     cluster_manifest: /tmp/release-1.17/cluster.yaml
     ceph_tools_pod_label: app=rook-ceph-tools
-    ansible_python_interpreter: /usr/bin/python3.9
-
+    ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: Ensure pip3 is installed (CentOS Stream 9)
       ansible.builtin.dnf:
@@ -19,28 +18,48 @@
         state: present
         disablerepo: kubernetes
       become: true
+      when: ansible_os_family == "RedHat"
+
+    - name: Ensure pip3 is installed (Ubuntu)
+      ansible.builtin.apt:
+        name: python3-pip
+        state: present
+      become: true
+      when: ansible_os_family == "Debian"
 
     - name: Install kubernetes Python module
       ansible.builtin.pip:
         name: kubernetes
         executable: pip3
       become: true
+      when: ansible_os_family == "RedHat"
+
+    - name: Install kubernetes Python module via apt
+      ansible.builtin.apt:
+        name: python3-kubernetes
+        state: present
+      become: true
+      when: ansible_os_family == "Debian"
 
     - name: Get Control Plane Node Name
       shell: kubectl get nodes -o json
       register: nodes_output
 
-    - name: Parse Control Plane Node Name
-      set_fact:
-        control_plane_node: >-
-          {{ nodes_output.stdout | from_json |
-            json_query("items[?spec.taints[?key=='node-role.kubernetes.io/control-plane']].metadata.name") | first }}
+    - name: Get all Kubernetes node names
+      ansible.builtin.set_fact:
+        all_node_names: >-
+          {{ nodes_output.stdout | from_json | json_query("items[*].metadata.name") }}
       ignore_errors: true
 
-    - name: Remove NoSchedule taint from control-plane
-      command: >
-        kubectl taint node {{ control_plane_node }} node-role.kubernetes.io/control-plane:NoSchedule-
-      when: control_plane_node is defined
+    - name: Debug - Show all node names identified
+      ansible.builtin.debug:
+        var: all_node_names
+
+    - name: Attempt to remove node-role.kubernetes.io/control-plane:NoSchedule taint from all nodes
+      ansible.builtin.command: >
+        kubectl taint node {{ item }} node-role.kubernetes.io/control-plane:NoSchedule-
+      loop: "{{ all_node_names }}"
+      when: all_node_names is defined and all_node_names | length > 0
       ignore_errors: true
 
     - name: Copy rook test files to control plane
@@ -98,7 +117,7 @@
           - app=rook-ceph-mgr
       register: mgr_pods
       until:
-        - mgr_pods.resources | length >= 1
+        - mgr_pods.resources | length >= 2
         - mgr_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == mgr_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all MGR pods are ready
       retries: 60
       delay: 10
@@ -128,7 +147,7 @@
           - app=rook-ceph-osd
       register: osd_pods
       until:
-        - osd_pods.resources | length >= 2
+        - osd_pods.resources | length >= 3
         - osd_pods.resources | selectattr('status.containerStatuses', 'defined') | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length == osd_pods.resources | map(attribute='spec.containers') | flatten | list | length # All containers in all OSD pods are ready
       retries: 60
       delay: 10

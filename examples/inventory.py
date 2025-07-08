@@ -10,11 +10,15 @@ def get_inventory():
 
     ip_mappings = {
         'ubuntu': {
-            'control-plane': '192.168.111.100',
+            'control-plane1': '192.168.111.100',
+            'control-plane2': '192.168.111.102',
+            'control-plane3': '192.168.111.103',
             'worker': '192.168.111.101'
         },
         'centos': {
-            'control-plane': '172.22.0.100',
+            'control-plane1': '172.22.0.100',
+            'control-plane2': '172.22.0.102',
+            'control-plane3': '172.22.0.103',
             'worker': '172.22.0.101'
         }
     }
@@ -25,19 +29,27 @@ def get_inventory():
         "_meta": {
             "hostvars": {}
         },
-        "kube_control_plane": {
-            "hosts": ["control-plane"]
+        "kube_control_plane1": {
+            "hosts": ["control-plane1"]
         },
         "kube_worker_nodes": {
             "hosts": ["worker"]
         },
         "kube_all_nodes": {
-            "hosts": ["control-plane", "worker"]
+            "hosts": ["control-plane1", "control-plane2", "control-plane3", "worker"]
         }
     }
 
-    inventory["_meta"]["hostvars"]["control-plane"] = {
-        "ansible_host": selected_ips['control-plane'],
+    inventory["_meta"]["hostvars"]["control-plane1"] = {
+        "ansible_host": selected_ips['control-plane1'],
+        "ansible_user": "metal3",
+    }
+    inventory["_meta"]["hostvars"]["control-plane2"] = {
+        "ansible_host": selected_ips['control-plane2'],
+        "ansible_user": "metal3",
+    }
+    inventory["_meta"]["hostvars"]["control-plane3"] = {
+        "ansible_host": selected_ips['control-plane3'],
         "ansible_user": "metal3",
     }
     inventory["_meta"]["hostvars"]["worker"] = {

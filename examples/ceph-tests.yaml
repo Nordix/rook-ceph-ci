@@ -1,6 +1,7 @@
 ---
 - name: Test Rook-Ceph RBD Persistent Volume from GitHub
-  hosts: kube_control_plane
+  hosts: kube_control_plane1
+  gather_facts: true
 
   vars:
     ansible_python_interpreter: /usr/bin/python3
