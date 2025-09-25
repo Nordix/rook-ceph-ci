@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
     - name: test-container
-      image: busybox
+      image: docker.io/library/busybox:latest
       command: ["/bin/sh", "-c"]
       args: ["echo 'RBD working!' > /mnt/rbd/test.txt && sleep 3600"]
       volumeMounts:
