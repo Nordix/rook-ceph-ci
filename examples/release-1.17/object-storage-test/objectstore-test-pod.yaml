@@ -7,7 +7,7 @@ metadata:
 spec:
   containers:
   - name: awscli
-    image: amazon/aws-cli:2.15.22 # Using a specific version of AWS CLI for consistency
+    image: docker.io/library/amazon/aws-cli:2.15.22 # Using a specific version of AWS CLI for consistency
     command: ["/bin/sh", "-c"]
     args:
     - |
