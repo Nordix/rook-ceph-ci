@@ -150,8 +150,8 @@
       until:
         - ceph_tools_pod_info.resources | length > 0
         - ceph_tools_pod_info.resources[0].status.phase == 'Running'
-      retries: 10
-      delay: 5
+      retries: 20
+      delay: 10
       tags: get_tools_pod
 
     - name: Set fact for ceph tools pod name
